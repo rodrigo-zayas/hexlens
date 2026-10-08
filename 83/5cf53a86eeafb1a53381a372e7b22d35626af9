@@ -1,0 +1,21 @@
+Sources/HexLensUI/GraphCanvas.swift
+  s_4727cc1cd4df26::t_ad2e603fd1a951 19,112-114,139,245
+Sources/HexLensUI/MapScrollView.swift
+  s_4727cc1cd4df26::t_181c3477da0f8d 181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "835cf53a86eeafb1a53381a372e7b22d35626af9",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
