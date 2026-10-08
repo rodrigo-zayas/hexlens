@@ -3,7 +3,7 @@ Sources/HexLensUI/CodeView.swift
 Sources/HexLensUI/DetailView.swift
   s_031a3a5218481b::t_d4a9110111fb64 20-25,227-268
 Tests/HexLensCoreTests/CoreTests.swift
-  s_031a3a5218481b::t_e0fed1bdd70e2a 140-150
+  s_031a3a5218481b::t_e0fed1bdd70e2a 140-150,140-142,145-150
 Sources/HexLensUI/RootView.swift
   s_031a3a5218481b::t_39c9e4e00551cf 269-273
 Sources/HexLensCore/TextSearch.swift
