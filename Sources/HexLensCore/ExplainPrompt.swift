@@ -1,9 +1,9 @@
 import Foundation
 
-/// Prompts para que `claude` explique la PR, un fichero o un flujo. Claude corre en el repo y
+/// Prompts para que `claude` explique la PR o un fichero. Claude corre en el repo y
 /// lee el diff él mismo; aquí solo se le da el mapa que HexLens ya ha calculado.
 public enum ExplainPrompt {
-  public static func pr(_ s: ReviewSession, flows: [FlowNode]) -> String {
+  public static func pr(_ s: ReviewSession) -> String {
     """
     Explícame qué hace el código de esta PR, de forma concisa. Soy el revisor y no la conozco.
 
@@ -11,15 +11,12 @@ public enum ExplainPrompt {
 
     Responde así, sin relleno y sin repetir el diff:
     1. Qué hace, en 2-3 frases y en términos de negocio.
-    2. Cada flujo de entrada (endpoint, handler, consumer) paso a paso hasta persistencia o eventos, nombrando `Clase.metodo`.
+    2. Qué aporta cada capa (entrada, aplicación, dominio, salida), nombrando `Clase.metodo`.
     3. Cambios de comportamiento o decisiones de diseño que no son obvios.
     4. Qué revisaría con atención: riesgos y casos borde, máximo 5 puntos.
 
     Ficheros por capa:
     \(layers(s))
-
-    Flujos de llamadas detectados (aproximados, sin resolver tipos):
-    \(FlowBuilder.outline(flows))
     """
   }
 
@@ -45,17 +42,6 @@ public enum ExplainPrompt {
       Lo usan: \(usedBy.isEmpty ? "—" : usedBy.joined(separator: ", "))
       Usa: \(uses.isEmpty ? "—" : uses.joined(separator: ", "))
       """
-  }
-
-  public static func flow(_ s: ReviewSession, flow: FlowNode) -> String {
-    """
-    Explícame paso a paso y de forma concisa qué pasa cuando se ejecuta `\(flow.title)` en esta PR: qué datos entran, qué decisiones se toman, qué se guarda o se publica y qué devuelve. Señala qué parte es nueva o cambia en la PR y qué revisaría.
-
-    \(context(s))
-
-    Recorrido detectado por HexLens (aproximado):
-    \(FlowBuilder.outline([flow], pruned: false))
-    """
   }
 
   public static func context(_ s: ReviewSession) -> String {

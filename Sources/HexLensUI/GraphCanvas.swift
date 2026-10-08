@@ -8,13 +8,12 @@ public struct GraphCanvas: View {
   var selectedID: String?
   var hoveredID: String?
   var reviewed: Set<String> = []
-  var highlight: Set<String>?
   var onSelect: (String) -> Void = { _ in }
   var onHover: (String?) -> Void = { _ in }
 
   public init(
     graph: PRGraph, layout: GraphLayout, selectedID: String? = nil, hoveredID: String? = nil,
-    reviewed: Set<String> = [], highlight: Set<String>? = nil, onSelect: @escaping (String) -> Void = { _ in },
+    reviewed: Set<String> = [], onSelect: @escaping (String) -> Void = { _ in },
     onHover: @escaping (String?) -> Void = { _ in }
   ) {
     self.graph = graph
@@ -22,7 +21,6 @@ public struct GraphCanvas: View {
     self.selectedID = selectedID
     self.hoveredID = hoveredID
     self.reviewed = reviewed
-    self.highlight = highlight
     self.onSelect = onSelect
     self.onHover = onHover
   }
@@ -48,29 +46,28 @@ public struct GraphCanvas: View {
     let near = neighborhood
     ZStack(alignment: .topLeading) {
       ForEach(layout.columns) { column in
-        RoundedRectangle(cornerRadius: 14)
-          .fill(column.layer.color.opacity(0.06))
-          .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(column.layer.color.opacity(0.25)))
+        RoundedRectangle(cornerRadius: 10)
+          .fill(Color.primary.opacity(0.03))
+          .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
           .frame(width: column.frame.width, height: column.frame.height)
           .offset(x: column.frame.minX, y: column.frame.minY)
         VStack(alignment: .leading, spacing: 1) {
           Text(column.layer.title.uppercased())
-            .font(.system(size: 12, weight: .bold))
-            .foregroundStyle(column.layer.color)
-          Text(column.layer.subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+          Text(column.layer.subtitle).font(.system(size: 10)).foregroundStyle(.tertiary)
         }
         .offset(x: column.frame.minX + 14, y: column.frame.minY + 10)
       }
 
       ForEach(layout.groups) { group in
-        RoundedRectangle(cornerRadius: 9)
+        RoundedRectangle(cornerRadius: 7)
           .fill(Color(nsColor: .windowBackgroundColor).opacity(0.65))
-          .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(group.layer.color.opacity(0.35), lineWidth: 1))
+          .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 1))
           .frame(width: group.frame.width, height: group.frame.height)
           .offset(x: group.frame.minX, y: group.frame.minY)
         HStack(spacing: 4) {
-          Image(systemName: "shippingbox").font(.system(size: 9))
-          Text(group.title).font(.system(size: 11, weight: .semibold))
+          Text(group.title).font(.system(size: 11, weight: .medium))
           if !group.subtitle.isEmpty {
             Text(group.subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
           }
@@ -86,8 +83,7 @@ public struct GraphCanvas: View {
         let edges = visibleEdges.sorted { a, _ in !(near.contains(a.from) && near.contains(a.to)) }
         for e in edges {
           guard let a = layout.frames[e.from], let b = layout.frames[e.to] else { continue }
-          let inFlow = highlight.map { $0.contains(e.from) && $0.contains(e.to) } ?? true
-          let inFocus = (focus == nil || e.from == focus || e.to == focus) && inFlow
+          let inFocus = (focus == nil || e.from == focus || e.to == focus)
           drawEdge(ctx, from: a, to: b, kind: e.kind, violation: bad.contains(e.id), emphasised: focus != nil && inFocus, dimmed: !inFocus)
         }
       }
@@ -99,7 +95,7 @@ public struct GraphCanvas: View {
         NodeView(
           unit: unit,
           selected: unit.id == selectedID,
-          dimmed: (focus != nil && !near.contains(unit.id)) || (highlight.map { !$0.contains(unit.id) } ?? false),
+          dimmed: focus != nil && !near.contains(unit.id),
           reviewed: reviewed.contains(unit.id),
           isEntry: unit.id == graph.entryPoint,
           tests: graph.tests(of: unit.id).count,
@@ -139,7 +135,7 @@ public struct GraphCanvas: View {
     path.move(to: start)
     path.addCurve(to: end, control1: c1, control2: c2)
 
-    let base: Color = violation ? .red : kind == .tests ? .green : emphasised ? .accentColor : .secondary
+    let base: Color = violation ? .red : emphasised ? .accentColor : .secondary
     let color = base.opacity(dimmed ? 0.12 : emphasised ? 0.95 : 0.45)
     let width: CGFloat = emphasised ? 2 : 1.1
     let dash: [CGFloat] = kind == .implements || kind == .extends ? [6, 4] : kind == .tests ? [2, 3] : []
@@ -175,10 +171,6 @@ struct NodeView: View {
     HStack(spacing: 0) {
       Rectangle().fill(unit.status.color).frame(width: 4)
       HStack(spacing: 7) {
-        Image(systemName: unit.role.symbol)
-          .font(.system(size: 14))
-          .foregroundStyle(unit.layer.color)
-          .frame(width: 18)
         VStack(alignment: .leading, spacing: 2) {
           Text(unit.typeName)
             .font(.system(size: 12, weight: .semibold))
@@ -190,8 +182,8 @@ struct NodeView: View {
             if unit.isGhost {
               Text("sin cambios").italic()
             } else {
-              Text("+\(unit.additions)").foregroundStyle(.green)
-              Text("−\(unit.deletions)").foregroundStyle(.red)
+              Text("+\(unit.additions)").foregroundStyle(Semantic.added)
+              Text("−\(unit.deletions)").foregroundStyle(Semantic.removed)
             }
           }
           .font(.system(size: 10))
@@ -201,19 +193,16 @@ struct NodeView: View {
         Spacer(minLength: 0)
         VStack(alignment: .trailing, spacing: 2) {
           HStack(spacing: 3) {
-            if isEntry { Image(systemName: "flag.fill").foregroundStyle(.pink).help("Punto de entrada sugerido") }
-            if violations > 0 { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
-            if reviewed { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+            if isEntry { Image(systemName: "flag").help("Punto de entrada sugerido") }
+            if violations > 0 { Image(systemName: "exclamationmark.triangle").foregroundStyle(Semantic.error) }
+            if reviewed { Image(systemName: "checkmark") }
           }
           if tests > 0 {
-            HStack(spacing: 1) {
-              Image(systemName: "testtube.2")
-              Text("\(tests)")
-            }
-            .foregroundStyle(.green)
+            Text("\(tests) t")
           }
         }
         .font(.system(size: 10))
+        .foregroundStyle(.secondary)
       }
       .padding(.horizontal, 7)
     }
@@ -224,9 +213,8 @@ struct NodeView: View {
     .overlay(
       RoundedRectangle(cornerRadius: 7)
         .strokeBorder(
-          selected ? Color.accentColor : unit.layer.color.opacity(unit.isGhost ? 0.5 : 0.35),
-          style: StrokeStyle(lineWidth: selected ? 2.5 : 1, dash: unit.isGhost ? [4, 3] : [])))
-    .shadow(color: .black.opacity(selected ? 0.25 : 0.08), radius: selected ? 5 : 1.5, y: 1)
+          selected ? Color.accentColor : Color.secondary.opacity(unit.isGhost ? 0.5 : 0.35),
+          style: StrokeStyle(lineWidth: selected ? 2 : 1, dash: unit.isGhost ? [4, 3] : [])))
     .opacity(dimmed ? 0.35 : unit.isGhost ? 0.8 : 1)
   }
 }

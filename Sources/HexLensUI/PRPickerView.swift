@@ -89,7 +89,7 @@ private struct PRRow: View {
       Text("#\(pr.number)").font(.system(.body, design: .monospaced)).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
       VStack(alignment: .leading, spacing: 3) {
         HStack {
-          if pr.isDraft == true { Pill(text: "draft") }
+          if pr.isDraft == true { Tag(text: "draft") }
           Text(pr.title).lineLimit(2)
         }
         Text("\(pr.author?.login ?? "?") · \(pr.headRefName) → \(pr.baseRefName)")
@@ -98,8 +98,8 @@ private struct PRRow: View {
       Spacer()
       VStack(alignment: .trailing, spacing: 2) {
         HStack(spacing: 4) {
-          Text("+\(pr.additions ?? 0)").foregroundStyle(.green)
-          Text("−\(pr.deletions ?? 0)").foregroundStyle(.red)
+          Text("+\(pr.additions ?? 0)").foregroundStyle(Semantic.added)
+          Text("−\(pr.deletions ?? 0)").foregroundStyle(Semantic.removed)
         }
         Text("\(pr.changedFiles ?? 0) ficheros").foregroundStyle(.secondary)
       }

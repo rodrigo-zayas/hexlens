@@ -33,7 +33,9 @@ public struct RootView: View {
     .toolbar { toolbar }
     .navigationTitle(model.repo?.name ?? "HexLens")
     .navigationSubtitle(model.session?.title ?? "")
+    .sheet(item: $model.usagePopup) { _ in UsagesPopupView().environmentObject(model) }
     .sheet(isPresented: $model.showPRPicker) { PRPickerView().environmentObject(model) }
+    .sheet(item: $model.quickOpen) { QuickOpenView(mode: $0).environmentObject(model) }
     .overlay {
       if let busy = model.busy {
         VStack(spacing: 10) {
@@ -68,64 +70,55 @@ public struct RootView: View {
             Button(b) { model.open(pr, base: b) }
           }
         } label: {
-          Label("Base: \(model.baseOverride ?? pr.baseRefName)", systemImage: "arrow.triangle.branch")
+          Text("Base: \(model.baseOverride ?? pr.baseRefName)")
         }
         .help("Comparar la PR contra otra rama sin cambiarla en GitHub (útil en PRs apiladas)")
       }
     }
     ToolbarItemGroup(placement: .primaryAction) {
-      Picker("Contexto", selection: $model.contextMode) {
-        ForEach(ContextMode.allCases) { Text($0.title).tag($0) }
-      }
-      .help("Ficheros sin cambios que conectan piezas de la PR")
-      Toggle(isOn: $model.showTests) { Label("Tests", systemImage: "testtube.2") }
-        .help("Mostrar los tests como nodos")
       Button { model.step(-1) } label: { Label("Anterior", systemImage: "chevron.up") }
         .help("Anterior en el orden de lectura (⌘[)")
       Button { model.step(1) } label: { Label("Siguiente", systemImage: "chevron.down") }
         .help("Siguiente en el orden de lectura (⌘])")
       Button { model.toggleReviewed() } label: { Label("Revisado", systemImage: "checkmark.circle") }
         .help("Marcar revisado (⌘D)")
-      Button { model.toggleCodeOnly() } label: {
-        Label("Solo código", systemImage: model.columns == .detailOnly ? "rectangle.split.3x1" : "rectangle.righthalf.filled")
-      }
-      .help("Código a pantalla completa (⌘⇧C)")
-      Menu {
-        Picker("Apariencia", selection: $model.appearance) {
-          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-        }
-      } label: { Label("Apariencia", systemImage: "circle.lefthalf.filled") }
       Button { model.explainPR() } label: { Label("Explicar PR", systemImage: "sparkles") }
         .disabled(model.session == nil)
         .help("Abre Claude en Terminal con un resumen de qué hace la PR")
-      Button { model.reload() } label: { Label("Recargar", systemImage: "arrow.clockwise") }
-        .disabled(model.session == nil)
-      if model.currentPR?.url != nil {
-        Button { model.openOnGitHub() } label: { Label("GitHub", systemImage: "safari") }
-      }
+      Menu {
+        Picker("Contexto", selection: $model.contextMode) {
+          ForEach(ContextMode.allCases) { Text($0.title).tag($0) }
+        }
+        Toggle("Mostrar tests", isOn: $model.showTests)
+        Button(model.columns == .detailOnly ? "Mostrar paneles" : "Solo código") { model.toggleCodeOnly() }
+        Divider()
+        Picker("Apariencia", selection: $model.appearance) {
+          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+        }
+        Divider()
+        Button("Recargar") { model.reload() }.disabled(model.session == nil)
+        if model.currentPR?.url != nil {
+          Button("Abrir en GitHub") { model.openOnGitHub() }
+        }
+      } label: { Label("Más", systemImage: "ellipsis.circle") }
+        .help("Contexto, tests, solo código, apariencia, recargar y GitHub")
     }
   }
 }
 
-/// Centro: flujos (qué hace) o mapa (dónde está), con el resumen por capa encima.
+/// Centro: barra de resumen y mapa.
 struct CenterPane: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack(spacing: 0) {
-        Picker("", selection: $model.centerMode) {
-          ForEach(CenterMode.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented).labelsHidden().fixedSize()
-        .padding(.leading, 12)
+      HStack(spacing: Metrics.m) {
         SummaryBar()
+        Spacer(minLength: 0)
       }
+      .padding(.horizontal, Metrics.m).padding(.vertical, Metrics.s)
       Divider()
-      switch model.centerMode {
-      case .flows: FlowsView()
-      case .map: GraphPane()
-      }
+      GraphPane()
     }
   }
 }
@@ -141,7 +134,6 @@ struct GraphPane: View {
             GraphCanvas(
               graph: graph, layout: model.layout, selectedID: model.selectedID, hoveredID: model.hoveredID,
               reviewed: model.reviewed,
-              highlight: model.activeFlow.flatMap { i in model.agentFlows.first { $0.id == i }?.files },
               onSelect: { model.select($0) }, onHover: { model.hoveredID = $0 })
               .scaleEffect(model.zoom, anchor: .topLeading)
               .frame(width: model.layout.size.width * model.zoom, height: model.layout.size.height * model.zoom, alignment: .topLeading)
@@ -177,81 +169,23 @@ struct GraphPane: View {
   }
 }
 
-/// Macroestructura antes del detalle: cuánto toca cada capa y qué reglas rompe.
+/// Una línea: violaciones, avisos y punto de entrada sugerido.
 struct SummaryBar: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
     if let g = model.graph {
-      let changed = g.changed.filter { $0.isCode && !$0.isTest }
-      let byLayer = Dictionary(grouping: changed, by: \.layer)
       let errors = g.violations.filter { $0.severity == .error }
       let warnings = g.violations.filter { $0.severity == .warning }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 10) {
-          ForEach(Layer.allCases, id: \.self) { layer in
-            if let us = byLayer[layer] {
-              let roles = Dictionary(grouping: us, by: \.role).sorted { $0.key.rank < $1.key.rank }
-              VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                  Circle().fill(layer.color).frame(width: 8, height: 8)
-                  Text(layer.title).font(.system(size: 11, weight: .semibold))
-                  Text("\(us.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
-                }
-                Text(roles.map { "\($0.value.count) \($0.key.label)" }.joined(separator: " · "))
-                  .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-              }
-              .padding(.horizontal, 8).padding(.vertical, 5)
-              .background(layer.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-            }
-          }
-          let tests = g.changed.filter(\.isTest).count
-          if tests > 0 { Pill(text: "\(tests) tests", color: .green, symbol: "testtube.2") }
-          if !errors.isEmpty { Pill(text: "\(errors.count) violaciones", color: .red, symbol: "xmark.octagon.fill") }
-          if !warnings.isEmpty { Pill(text: "\(warnings.count) avisos", color: .orange, symbol: "exclamationmark.triangle.fill") }
-          if let entry = g.entryPoint.flatMap(g.unit) {
-            Button { model.select(entry.id) } label: {
-              Pill(text: "Empieza por \(entry.typeName)", color: .pink, symbol: "flag.fill")
-            }
+      HStack(spacing: Metrics.m) {
+        if !errors.isEmpty { Tag(text: "\(errors.count) violaciones", symbol: "xmark.octagon", isError: true) }
+        if !warnings.isEmpty { Tag(text: "\(warnings.count) avisos", symbol: "exclamationmark.triangle") }
+        if let entry = g.entryPoint.flatMap(g.unit) {
+          Button { model.select(entry.id) } label: { Tag(text: "Empieza por \(entry.typeName)", symbol: "flag") }
             .buttonStyle(.plain)
-          }
-          Legend()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-      }
-    }
-  }
-}
-
-struct Legend: View {
-  var body: some View {
-    HStack(spacing: 12) {
-      legendLine("usa", dash: [], color: .secondary)
-      legendLine("implementa / extiende", dash: [6, 4], color: .secondary)
-      legendLine("viola capas", dash: [], color: .red)
-      HStack(spacing: 4) {
-        RoundedRectangle(cornerRadius: 3).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2])).frame(width: 16, height: 10)
-        Text("sin cambios")
-      }
-      HStack(spacing: 6) {
-        ForEach([ChangeStatus.added, .modified, .deleted], id: \.self) { s in
-          HStack(spacing: 2) { Rectangle().fill(s.color).frame(width: 4, height: 10); Text(s.label) }
+            .help("Punto de entrada sugerido")
         }
       }
-    }
-    .font(.system(size: 10))
-    .foregroundStyle(.secondary)
-    .fixedSize()
-    .padding(.leading, 8)
-  }
-
-  private func legendLine(_ text: String, dash: [CGFloat], color: Color) -> some View {
-    HStack(spacing: 4) {
-      Path { p in p.move(to: CGPoint(x: 0, y: 5)); p.addLine(to: CGPoint(x: 22, y: 5)) }
-        .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: dash))
-        .frame(width: 22, height: 10)
-      Text(text)
     }
   }
 }
@@ -263,14 +197,29 @@ public struct ReviewCommands: Commands {
 
   public var body: some Commands {
     CommandGroup(after: .newItem) {
-      Button("Abrir repositorio…") { model.chooseRepository() }.keyboardShortcut("o")
+      Button("Abrir repositorio…") { model.chooseRepository() }.keyboardShortcut("o", modifiers: [.command, .option])
+      Button("Ir a clase…") { model.quickOpen = .type }.keyboardShortcut("o").disabled(model.session == nil)
+      Button("Ir a fichero…") { model.quickOpen = .file }.keyboardShortcut("o", modifiers: [.command, .shift]).disabled(model.session == nil)
       Button("Elegir PR…") { model.showPRPicker = true }.keyboardShortcut("p").disabled(model.repo == nil)
+    }
+    CommandGroup(after: .textEditing) {
+      Button("Estructura del fichero…") { model.showStructure = true }
+        .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(NSF12FunctionKey)!)), modifiers: .command)
+        .disabled(model.location == nil)
+      Button("Buscar…") { model.showFind() }.keyboardShortcut("f").disabled(model.location == nil)
+      Button("Buscar siguiente") { model.findNext() }.keyboardShortcut("g").disabled(model.location == nil)
+      Button("Buscar usos") { model.requestFindUsages() }
+        .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(NSF7FunctionKey)!)), modifiers: .option).disabled(model.location == nil)
+      Button("Buscar anterior") { model.findPrevious() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(model.location == nil)
     }
     CommandMenu("Revisión") {
       Button("Siguiente") { model.step(1) }.keyboardShortcut("]")
       Button("Anterior") { model.step(-1) }.keyboardShortcut("[")
       Button("Siguiente sin revisar") { model.nextUnreviewed() }.keyboardShortcut("]", modifiers: [.command, .shift])
       Button("Marcar revisado") { model.toggleReviewed() }.keyboardShortcut("d")
+      Button("Añadir nota…") { model.requestAddNote() }.keyboardShortcut("n", modifiers: [.command, .option])
+      Button("Enviar notas a Claude") { model.sendNotesToClaude() }.keyboardShortcut(.return, modifiers: [.command, .option]).disabled(model.notesToSend.isEmpty)
+      Button("Copiar notas para Claude") { model.copyNotesForClaude() }.disabled(model.notesToSend.isEmpty)
       Divider()
       Button("Atrás") { model.back() }.keyboardShortcut(.leftArrow, modifiers: [.command, .option])
       Button("Adelante") { model.forward() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])
@@ -278,6 +227,8 @@ public struct ReviewCommands: Commands {
       Button("Cambio anterior") { model.jumpChange(-1) }.keyboardShortcut(.upArrow, modifiers: [.command, .option])
       Divider()
       Button("Explicar la PR con Claude") { model.explainPR() }.keyboardShortcut("e", modifiers: [.command, .shift])
+      Button(model.sideBySide ? "Diff unificado" : "Diff lado a lado") { model.toggleSideBySide() }
+        .keyboardShortcut("d", modifiers: [.command, .option]).disabled(model.location == nil)
       Button("Solo código") { model.toggleCodeOnly() }.keyboardShortcut("c", modifiers: [.command, .shift])
       Divider()
       Button("Acercar") { model.zoom = min(2, model.zoom + 0.1) }.keyboardShortcut("+")

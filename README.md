@@ -8,11 +8,10 @@ App nativa de macOS para revisar PRs de Java como un hexágono. Cada fichero de 
 
 GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexagonal eso desordena la historia: el controller sale antes que el puerto que usa, los tests se mezclan con el código, y no se ve si un adaptador se salta la aplicación. HexLens reordena la misma PR por arquitectura:
 
-- **Flujos con Claude**: al abrir la PR, "Generar con Claude" lanza un agente de Claude Code en segundo plano (`claude -p`, solo `git show/diff/grep/log`). El agente recibe el esqueleto estático, lo verifica leyendo el código y devuelve JSON con esquema fijo: flujos con nombre de negocio, disparador, resumen de dos frases, pasos `Clase.metodo` de una frase y riesgos. HexLens ancla cada paso al código de la cabeza y marca con "?" lo que no encuentra. El resultado se cachea por commit en `~/Library/Caches/HexLens`.
-- **Flujos automáticos**: para cada punto de entrada (controller, handler, consumer), la cadena de llamadas método a método hasta persistencia o eventos, bajando de cada puerto a su implementación. Por defecto solo las ramas que cambian.
-- **Visor de código tipo IntelliJ**: fichero completo con los cambios marcados, colores de IntelliJ (claro y oscuro) y margen de números. Clic en una clase o en `objeto.metodo()` para ir a su definición, aunque esté fuera de la PR. Atrás y adelante con `⌘⌥←` / `⌘⌥→`, cambios con `⌘⌥↑` / `⌘⌥↓`. En una interfaz, salto a sus implementaciones.
-- **Explicar con Claude**: abre Terminal con una sesión de `claude` en el repo y un prompt que pide una explicación concisa de la PR, de un fichero o de un flujo. Se puede seguir preguntando.
-- **Resumen por capa** antes del detalle: cuántos casos de uso, puertos, adaptadores… toca la PR.
+- **Notas de revisión**: selecciona líneas en el visor y pulsa `⌥⌘N` (o clic derecho → «Añadir nota…») para dejar una nota; marcador en el margen, lista «Notas» en la barra lateral, y se reanclan o se marcan como desactualizadas si el código cambia.
+- **Notas a Claude**: `⌥⌘↩` (o «Enviar a Claude» en la lista de notas) manda las notas no enviadas —o las seleccionadas con ⌘clic— a la sesión de Claude enlazada a la rama de la PR (`claude --resume`); si no hay, abre una sesión nueva en el worktree de la rama. «Copiar» deja el texto en el portapapeles para pegarlo en Claude Desktop. La sesión se detecta sola en `~/.claude/projects` y puedes cambiarla o quitarla desde el menú «Sesión de Claude» de la sección Notas. Las enviadas llevan un icono de avión de papel y se pueden reenviar. La sección Notas y los métodos tocados van colapsados por defecto (se recuerda el estado).
+- **Visor de código tipo IntelliJ**: fichero completo con los cambios marcados, colores de IntelliJ (claro y oscuro) y margen de números. Clic en una clase o en `objeto.metodo()` para ir a su definición, aunque esté fuera de la PR. Atrás y adelante con `⌘⌥←` / `⌘⌥→`, cambios con `⌘⌥↑` / `⌘⌥↓`. En una interfaz, salto a sus implementaciones. Búsqueda en el fichero con `⌘F` (resalta todo, `⌘G` / `⌘⇧G` siguiente y anterior; opciones de mayúsculas y palabra completa). Estructura del fichero con `⌘F12` (tipos, métodos y campos filtrables; marca los cambiados), migas `Clase › método` sobre el visor, resaltado de los usos del identificador bajo el cursor y franja de marcas a la derecha (cambios, notas y búsqueda) en la que se puede hacer clic. Diff unificado o lado a lado (base a la izquierda, cabeza a la derecha, scroll vertical sincronizado) con el conmutador de la cabecera o `⌥⌘D`. «Buscar usos» (`⌥F7` o clic derecho) abre un popup con todos los usos del identificador en el repo, agrupados por fichero y filtrables, y `↑` / `↓` + `Enter` saltan a la línea. Plegado de código (imports plegados por defecto, chevron en el margen o `⌘-` / `⌘+` en el cursor, `⌘⇧-` / `⌘⇧+` para todo); navegar o buscar dentro de una región plegada la despliega.
+- **Explicar con Claude**: abre Terminal con una sesión de `claude` en el repo y un prompt que pide una explicación concisa de la PR o de un fichero. Se puede seguir preguntando.
 - **Grafo** con columnas Entrada → Aplicación → Dominio → Salida, cajas por paquete y aristas `usa` / `implementa`.
 - **Orden de lectura** sugerido: dominio hacia fuera, entrada hacia dentro, tests primero o más grande primero. Cada test va pegado a la clase que prueba.
 - **Punto de entrada**: la pieza más conectada dentro de la PR.
@@ -35,7 +34,7 @@ Las dos están firmadas con Developer ID y notarizadas por Apple: se descomprime
 ./scripts/make-icon.sh            # regenera Resources/AppIcon.icns desde docs/logo.svg
 ```
 
-En la app: `⌘O` abre un repo, `⌘P` elige PR (pedidas a mí, abiertas, mías, por número o comparando dos refs). Navegación: `⌘]` / `⌘[` siguiente o anterior en el orden de lectura, `⌘⇧]` siguiente sin revisar, `⌘D` marcar revisado.
+En la app: `⌥⌘O` abre un repo, `⌘O` va a una clase y `⌘⇧O` a un fichero (búsqueda difusa, también por iniciales CamelCase), `⌘P` elige PR (pedidas a mí, abiertas, mías, por número o comparando dos refs). Navegación: `⌘]` / `⌘[` siguiente o anterior en el orden de lectura, `⌘⇧]` siguiente sin revisar, `⌘D` marcar revisado.
 
 Desde terminal:
 
@@ -43,14 +42,27 @@ Desde terminal:
 open dist/HexLens.app --args -repo ~/Developer/work/app-editionimg/repos/mic-pacmanproducts -pr 46870
 dist/hexlens summary --repo <repo> --pr 46870 [--order outsideIn]
 dist/hexlens summary --repo <repo> --base 7d0a47c27fc^ --head 7d0a47c27fc
-dist/hexlens flows --repo <repo> --pr 46870
 dist/hexlens prompt --repo <repo> --pr 46870   # el prompt que recibe Claude
 dist/hexlens snapshot --repo <repo> --pr 46870 --out grafo.png [--context key|all] [--tests]
 ```
 
-**Base distinta** (PRs apiladas): el menú "Base" de la barra compara la PR contra `develop` o `main` en vez de su base real, sin cambiar nada en GitHub. Desde terminal: `open dist/HexLens.app --args -repo <repo> -pr 46873 -base develop`.
+**Base distinta** (PRs apiladas): el menú «Base» de la barra compara la PR contra `develop` o `main` en vez de su base real, sin cambiar nada en GitHub. Desde terminal: `open dist/HexLens.app --args -repo <repo> -pr 46873 -base develop`.
 
 Necesita `git` y `gh` con sesión iniciada. Las PRs se traen a `refs/hexlens/*` sin tocar tus ramas. Las PRs apiladas usan su base real, la rama de la PR anterior.
+
+## Notas en Claude (MCP)
+
+`hexlens mcp` es un servidor MCP por stdio con las notas de revisión (`list_review_notes`, `mark_notes_sent`), para que Claude las lea sin pegar el prompt. `build-app.sh` deja el binario en `dist/hexlens`:
+
+```bash
+claude mcp add hexlens -- /ruta/a/hexlens mcp
+```
+
+Claude Desktop, en `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "hexlens": { "command": "/ruta/a/hexlens", "args": ["mcp"] } } }
+```
 
 ## Cómo funciona
 

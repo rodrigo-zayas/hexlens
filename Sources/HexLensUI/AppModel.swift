@@ -2,22 +2,6 @@ import AppKit
 import HexLensCore
 import SwiftUI
 
-public enum CenterMode: String, CaseIterable, Identifiable {
-  case flows, map
-  public var id: String { rawValue }
-  public var title: String { self == .flows ? "Flujos" : "Mapa" }
-}
-
-public enum FlowSource: String, CaseIterable, Identifiable {
-  case agent, automatic
-  public var id: String { rawValue }
-  public var title: String { self == .agent ? "Claude" : "Automático" }
-}
-
-public enum AgentState: Equatable {
-  case idle, running(Date), done, failed(String)
-}
-
 /// Modelo de Claude por ID explícito, para saber siempre qué versión corre.
 public struct ClaudeModel: Hashable, Identifiable {
   /// "" = lo que tenga configurado el Claude Code del usuario.
@@ -71,14 +55,33 @@ public enum AppAppearance: String, CaseIterable, Identifiable {
   public var scheme: ColorScheme? { self == .dark ? .dark : self == .light ? .light : nil }
 }
 
-public enum ClaudeAuth: Equatable {
-  case unknown, checking, loggedIn(String?), loggedOut
-}
-
 /// Fichero (y línea) que enseña el visor de código.
 public struct CodeLocation: Hashable {
   public let path: String
   public var line: Int?
+}
+
+enum QuickOpenMode: Identifiable {
+  case file, type
+  var id: Int { self == .file ? 0 : 1 }
+}
+
+struct QuickOpenEntry: Identifiable {
+  let name: String
+  let detail: String
+  let layer: String
+  let changed: Bool
+  let path: String
+  let line: Int?
+  var id: String { "\(path)#\(line ?? 0)#\(name)" }
+}
+
+struct UsagePopupState: Equatable, Identifiable {
+  var word: String
+  var id: String { word }
+  var groups: [UsageGroup]
+  var loading: Bool
+  var changed: Set<String> = []
 }
 
 @MainActor
@@ -97,15 +100,15 @@ public final class AppModel: ObservableObject {
   @Published public private(set) var busy: String?
   @Published public var errorMessage: String?
   @Published public var showPRPicker = false
+  @Published var quickOpen: QuickOpenMode?
   @Published public var showTests = false { didSet { relayout() } }
   @Published public var contextMode: ContextMode = .none { didSet { relayout() } }
   @Published public var strategy: ReadingStrategy = .insideOut { didSet { recomputeOrder() } }
-  @Published public var centerMode: CenterMode = .flows
   @Published public var zoom: CGFloat = 1
   @Published public var appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .dark {
     didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
   }
-  /// Columnas visibles: por defecto flujos + código; "solo código" deja el visor a pantalla completa.
+  /// Columnas visibles: por defecto lista + código; "solo código" deja el visor a pantalla completa.
   @Published public var columns: NavigationSplitViewVisibility = .doubleColumn
   public func toggleCodeOnly() { columns = columns == .detailOnly ? .doubleColumn : .detailOnly }
   @Published public private(set) var layout = GraphLayout()
@@ -118,21 +121,54 @@ public final class AppModel: ObservableObject {
   @Published public private(set) var backStack: [CodeLocation] = []
   @Published public private(set) var forwardStack: [CodeLocation] = []
   @Published public var fullFile = true
+  /// Diff lado a lado en vez de unificado (se recuerda entre sesiones).
+  @Published public var sideBySide = UserDefaults.standard.bool(forKey: "sideBySide") {
+    didSet { UserDefaults.standard.set(sideBySide, forKey: "sideBySide") }
+  }
   @Published private(set) var scrollRequest: ScrollRequest?
   private var scrollSerial = 0
-  private var contentCache: [String: CodeContent] = [:]
+  /// Línea del fichero nuevo bajo el cursor del visor (para las migas).
+  @Published var cursorLine: Int?
+  @Published var showStructure = false
 
-  // Flujos
-  @Published public private(set) var flows: [FlowNode]?
-  @Published public var flowsOnlyChanges = true
-  @Published public var flowSource: FlowSource = .agent
+  // Búsqueda en el visor (⌘F)
+  @Published public private(set) var notes: [ReviewNote] = []
+  @Published var noteDraft: NoteDraft?
+  @Published private(set) var addNoteSerial = 0
+  @Published private(set) var findUsagesSerial = 0
+  @Published var usagePopup: UsagePopupState?
+  private var noteStore: ReviewNoteStore?
+  /// Sesiones de Claude detectadas para la rama de la PR y la enlazada (`nil` = ninguna / nueva).
+  @Published public private(set) var claudeSessions: [ClaudeSession] = []
+  @Published public private(set) var linkedSessionID: String?
+  private var branchName: String?
+  @Published var selectedNoteIDs: Set<UUID> = []
 
-  // Agente
-  @Published public private(set) var agentState: AgentState = .idle
-  @Published public private(set) var agentLog: [String] = []
-  @Published public private(set) var agentReport: AgentReport?
-  @Published public private(set) var agentFlows: [VerifiedFlow] = []
-  @Published public private(set) var claudeAuth: ClaudeAuth = .unknown
+  @Published var findVisible = false
+  @Published var findQuery = ""
+  @Published var findCaseSensitive = false
+  @Published var findWholeWord = false
+  @Published var findIndex = 0
+  @Published private(set) var findFocusSerial = 0
+
+  var findMatches: [NSRange] {
+    guard findVisible, let path = location?.path, let c = content(for: path) else { return [] }
+    return TextSearch.matches(of: findQuery, in: c.document.text, caseSensitive: findCaseSensitive, wholeWord: findWholeWord)
+  }
+
+  func showFind() { findVisible = true; findFocusSerial += 1 }
+  func closeFind() { findVisible = false }
+  func findNext() { stepFind(1) }
+  func findPrevious() { stepFind(-1) }
+
+  private func stepFind(_ d: Int) {
+    guard findVisible else { return showFind() }
+    let n = findMatches.count
+    guard n > 0 else { return }
+    findIndex = ((findIndex + d) % n + n) % n
+  }
+  private var contentCache: [String: (main: CodeContent, base: CodeContent?)] = [:]
+
   @Published public var claudeModelID = UserDefaults.standard.string(forKey: "claudeModelID") ?? "" {
     didSet { UserDefaults.standard.set(claudeModelID, forKey: "claudeModelID") }
   }
@@ -140,12 +176,6 @@ public final class AppModel: ObservableObject {
     ClaudeModel.catalog.first { $0.id == claudeModelID }
       ?? (claudeModelID.isEmpty ? .automatic : ClaudeModel(id: claudeModelID, name: claudeModelID, hint: ""))
   }
-  /// ID real del modelo que ha ejecutado (o está ejecutando) el agente, según el propio Claude Code.
-  @Published public private(set) var agentModelID: String?
-  private var authPoll: Task<Void, Never>?
-  /// Flujo resaltado en el mapa.
-  @Published public var activeFlow: Int?
-  private var agent: ClaudeAgent?
 
   public init() {}
 
@@ -245,8 +275,6 @@ public final class AppModel: ObservableObject {
         Task { @MainActor in self.busy = message }
       }
       await MainActor.run { self.present(session, pr: pr) }
-      let flows = FlowBuilder.build(session: session)
-      await MainActor.run { if self.session?.headSHA == session.headSHA { self.flows = flows } }
     } catch {
       await MainActor.run { self.fail(error) }
     }
@@ -256,27 +284,16 @@ public final class AppModel: ObservableObject {
     self.session = session
     currentPR = pr
     impact = [:]
-    flows = nil
-    cancelAgent()
-    agentState = .idle
-    agentLog = []
-    agentReport = nil
-    agentFlows = []
-    activeFlow = nil
     contentCache = [:]
     backStack = []
     forwardStack = []
     reviewed = Set(UserDefaults.standard.stringArray(forKey: reviewKey) ?? [])
+    loadNotes(for: session, pr: pr)
+    detectClaudeSessions(for: session, pr: pr)
     busy = nil
     recomputeOrder()
     relayout()
     select(session.graph.entryPoint ?? order.first, recordHistory: false)
-    checkClaudeAuth()
-    if let data = try? Data(contentsOf: agentCacheURL(session)),
-      let cached = try? JSONDecoder().decode(CachedReport.self, from: data)
-    {
-      show(cached.report, model: cached.model)
-    }
   }
 
   private func fail(_ error: Error) {
@@ -310,9 +327,46 @@ public final class AppModel: ObservableObject {
     order = graph?.readingOrder(strategy) ?? []
   }
 
+  // MARK: - Ir a fichero / clase
+
+  /// Candidatos de ⌘⇧O (ficheros) o ⌘O (tipos declarados) entre los ficheros cargados de la sesión.
+  func quickOpenEntries(_ mode: QuickOpenMode) -> [QuickOpenEntry] {
+    guard let s = session else { return [] }
+    var out: [QuickOpenEntry] = []
+    for u in s.graph.units where u.status != .deleted {
+      let changed = !u.isGhost
+      switch mode {
+      case .file:
+        out.append(QuickOpenEntry(
+          name: u.fileName, detail: u.path, layer: u.layer.title, changed: changed, path: u.path, line: nil))
+      case .type:
+        guard u.isCode else { continue }
+        let entries = u.path.hasSuffix(".java")
+          ? s.store.text(u.path, at: s.headSHA).map(Outline.java)?.filter { $0.kind == .type } ?? []
+          : []
+        if entries.isEmpty {
+          out.append(QuickOpenEntry(
+            name: u.typeName, detail: u.packageName.isEmpty ? u.path : u.packageName, layer: u.layer.title,
+            changed: changed, path: u.path, line: nil))
+        }
+        for e in entries {
+          out.append(QuickOpenEntry(
+            name: e.name, detail: u.packageName.isEmpty ? u.path : u.packageName, layer: u.layer.title,
+            changed: changed, path: u.path, line: e.line))
+        }
+      }
+    }
+    return out
+  }
+
+  func openQuickOpen(_ entry: QuickOpenEntry) {
+    quickOpen = nil
+    go(to: CodeLocation(path: entry.path, line: entry.line))
+  }
+
   // MARK: - Navegación
 
-  /// Selecciona un fichero de la PR (grafo, lista, flujos) y lo abre en el visor.
+  /// Selecciona un fichero de la PR (grafo o lista) y lo abre en el visor.
   public func select(_ id: String?, line: Int? = nil, recordHistory: Bool = true) {
     guard let id else { selectedID = nil; return }
     go(to: CodeLocation(path: id, line: line), recordHistory: recordHistory)
@@ -395,9 +449,15 @@ public final class AppModel: ObservableObject {
 
   // MARK: - Visor de código
 
-  func content(for path: String) -> CodeContent? {
+  /// Contenido que manda en el visor: el unificado, o la cabeza en lado a lado.
+  func content(for path: String) -> CodeContent? { contents(for: path)?.main }
+
+  /// Lado izquierdo (base) del diff lado a lado; `nil` en modo unificado o si el fichero solo tiene un lado.
+  func baseContent(for path: String) -> CodeContent? { sideBySide ? contents(for: path)?.base : nil }
+
+  private func contents(for path: String) -> (main: CodeContent, base: CodeContent?)? {
     guard let s = session else { return nil }
-    let key = "\(path)|\(fullFile)"
+    let key = "\(path)|\(fullFile)|\(sideBySide)"
     if let c = contentCache[key] { return c }
 
     let unit = s.graph.unit(path)
@@ -405,8 +465,13 @@ public final class AppModel: ObservableObject {
     let head = unit?.status == .deleted ? nil : s.store.text(path, at: s.headSHA)
     let base = changed ? s.store.text(unit?.oldPath ?? path, at: s.baseSHA) : nil
     let diff = changed ? unit.flatMap(s.diff(for:)) : nil
-    let document = CodeDocument.build(head: head, base: base, diff: diff, full: fullFile)
+    var document = CodeDocument.build(head: head, base: base, diff: diff, full: fullFile)
     guard !document.lines.isEmpty || head != nil else { return nil }
+    var baseDocument: CodeDocument?
+    if sideBySide, let split = SideBySide.build(from: document) {
+      document = split.right
+      baseDocument = split.left
+    }
 
     let isJava = path.hasSuffix(".java")
     let tokens = isJava ? JavaLexer.tokens(document.text) : []
@@ -417,9 +482,17 @@ public final class AppModel: ObservableObject {
       : []
     let statics = Set(facts.imports.filter(\.isStatic).compactMap { $0.name.components(separatedBy: ".").last })
     let c = CodeContent(
-      id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics)
-    contentCache[key] = c
-    return c
+      id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
+      outline: isJava && unit?.status != .deleted ? head.map(Outline.java) ?? [] : [])
+    var baseContent: CodeContent?
+    if let baseDocument {
+      let baseTokens = isJava ? JavaLexer.tokens(baseDocument.text) : []
+      baseContent = CodeContent(
+        id: "\(s.headSHA)|\(key)|base", document: baseDocument, tokens: baseTokens,
+        semantics: JavaSemantics.analyze(text: baseDocument.text, tokens: baseTokens), links: [], staticNames: statics)
+    }
+    contentCache[key] = (c, baseContent)
+    return (c, baseContent)
   }
 
   private func requestScroll(to target: CodeLocation) {
@@ -432,6 +505,11 @@ public final class AppModel: ObservableObject {
     }
     scrollSerial += 1
     scrollRequest = ScrollRequest(line: index ?? 0, serial: scrollSerial)
+  }
+
+  public func toggleSideBySide() {
+    sideBySide.toggle()
+    if let l = location { requestScroll(to: CodeLocation(path: l.path, line: nil)) }
   }
 
   public func toggleFullFile() {
@@ -448,6 +526,188 @@ public final class AppModel: ObservableObject {
     let target = delta > 0 ? changes.first { $0 > current } ?? changes.first! : changes.last { $0 < current } ?? changes.last!
     scrollSerial += 1
     scrollRequest = ScrollRequest(line: target, serial: scrollSerial)
+  }
+
+  // MARK: - Notas
+
+  /// Carga las notas de la PR (clave por repo + PR, no por commit) y las reancla contra la cabeza actual.
+  private func loadNotes(for s: ReviewSession, pr: PullRequestSummary?) {
+    noteDraft = nil
+    let key = pr.map { "pr\($0.number)" } ?? "\(s.baseRef)..\(s.headRef)"
+    let store = ReviewNoteStore(repoRoot: s.repo.root.path, key: key)
+    noteStore = store
+    let loaded = store.load()
+    var files: [String: String] = [:]
+    for path in Set(loaded.map(\.path)) { files[path] = s.store.text(path, at: s.headSHA) }
+    notes = reanchor(loaded, files: files, head: s.headSHA)
+    if notes != loaded { store.save(notes) }
+  }
+
+  func notes(in path: String) -> [ReviewNote] { notes.filter { $0.path == path } }
+
+  public func requestFindUsages() {
+    guard location != nil else { return }
+    findUsagesSerial += 1
+  }
+
+  /// Busca `word` en todo el repo en la cabeza de la PR, en segundo plano.
+  func findUsages(of word: String) {
+    guard let s = session else { return }
+    usagePopup = UsagePopupState(word: word, groups: [], loading: true)
+    let changed = Set(s.graph.changed.map(\.path))
+    let decl = try? NSRegularExpression(pattern: "\\b(class|interface|enum|record|@interface)\\s+" + NSRegularExpression.escapedPattern(for: word) + "\\b")
+    Task.detached {
+      let hits = s.repo.usages(of: word, at: s.headSHA).filter { h in
+        let r = NSRange(h.text.startIndex..., in: h.text)
+        return decl?.firstMatch(in: h.text, range: r) == nil
+      }
+      let groups = UsageSearch.group(hits)
+      await MainActor.run {
+        guard self.usagePopup?.word == word else { return }
+        self.usagePopup = UsagePopupState(word: word, groups: groups, loading: false, changed: changed)
+      }
+    }
+  }
+
+  public func requestAddNote() {
+    guard location != nil else { return }
+    addNoteSerial += 1
+  }
+
+  /// Abre el editor para una nota nueva sobre las líneas (del fichero nuevo) indicadas.
+  func beginNote(path: String, start: Int, end: Int) {
+    noteDraft = NoteDraft(noteID: nil, path: path, startLine: min(start, end), endLine: max(start, end), body: "")
+  }
+
+  func editNote(_ id: UUID) {
+    guard let n = notes.first(where: { $0.id == id }) else { return }
+    noteDraft = NoteDraft(noteID: id, path: n.path, startLine: n.startLine, endLine: n.endLine, body: n.body)
+  }
+
+  func commitDraft() {
+    guard let d = noteDraft else { return }
+    noteDraft = nil
+    let body = d.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let id = d.noteID {
+      if body.isEmpty { deleteNote(id) } else { updateNote(id, body: body) }
+    } else if !body.isEmpty {
+      addNote(path: d.path, start: d.startLine, end: d.endLine, body: body)
+    }
+  }
+
+  public func addNote(path: String, start: Int, end: Int, body: String) {
+    guard let s = session else { return }
+    let lines = (s.store.text(path, at: s.headSHA) ?? "").split(separator: "\n", omittingEmptySubsequences: false)
+    guard start >= 1, end >= start, end <= lines.count else { return }
+    let snippet = lines[(start - 1)..<end].joined(separator: "\n")
+    notes.append(ReviewNote(path: path, startLine: start, endLine: end, snippet: snippet, body: body, anchorSHA: s.headSHA))
+    noteStore?.save(notes)
+  }
+
+  public func updateNote(_ id: UUID, body: String) {
+    guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
+    notes[i].body = body
+    notes[i].updatedAt = Date()
+    noteStore?.save(notes)
+  }
+
+  public func deleteNote(_ id: UUID) {
+    notes.removeAll { $0.id == id }
+    noteStore?.save(notes)
+  }
+
+  public func goToNote(_ id: UUID) {
+    guard let n = notes.first(where: { $0.id == id }) else { return }
+    go(to: CodeLocation(path: n.path, line: n.startLine))
+  }
+
+  // MARK: - Sesión de Claude
+
+  private func linkKey(_ s: ReviewSession, _ branch: String) -> String { "claudeSession:\(s.repo.root.path):\(branch)" }
+
+  /// Busca las sesiones de Claude de la rama (en el repo y en sus worktrees) y aplica el enlace guardado o la más reciente.
+  private func detectClaudeSessions(for s: ReviewSession, pr: PullRequestSummary?) {
+    let branch = pr?.headRefName ?? s.headRef
+    branchName = branch
+    claudeSessions = []
+    linkedSessionID = nil
+    let repo = s.repo
+    let key = linkKey(s, branch)
+    Task.detached {
+      let cwds = [repo.root.path] + repo.worktrees().map(\.path)
+      let found = ClaudeSessions.find(cwds: cwds, branch: branch)
+      await MainActor.run {
+        guard self.session?.headSHA == s.headSHA else { return }
+        self.claudeSessions = found
+        let saved = UserDefaults.standard.string(forKey: key)
+        // Cadena vacía = el usuario quitó el enlace a propósito: no autoseleccionar.
+        if saved == "" { self.linkedSessionID = nil }
+        else { self.linkedSessionID = saved ?? found.first?.id }
+      }
+    }
+  }
+
+  var linkedSession: ClaudeSession? { claudeSessions.first { $0.id == linkedSessionID } }
+
+  /// Enlaza la rama con una sesión; `nil` quita el enlace y el envío abrirá una sesión nueva.
+  func linkSession(_ id: String?) {
+    guard let s = session, let branch = branchName else { return }
+    linkedSessionID = id
+    let key = linkKey(s, branch)
+    if let id { UserDefaults.standard.set(id, forKey: key) } else { UserDefaults.standard.set("", forKey: key) }
+  }
+
+  // MARK: - Enviar notas a Claude
+
+  /// La selección si la hay; si no, todas las no enviadas.
+  var notesToSend: [ReviewNote] {
+    let selected = notes.filter { selectedNoteIDs.contains($0.id) }
+    return selected.isEmpty ? notes.filter { $0.sentAt == nil } : selected
+  }
+
+  private func notesPrompt(_ list: [ReviewNote]) -> String {
+    guard let s = session else { return "" }
+    return NotesPrompt.build(notes: list, pr: currentPR.map { "la PR #\($0.number) «\($0.title)»" } ?? s.title,
+                             branch: branchName ?? s.headRef, repo: s.repo.name)
+  }
+
+  private func markSent(_ list: [ReviewNote]) {
+    let ids = Set(list.map(\.id)), now = Date()
+    for i in notes.indices where ids.contains(notes[i].id) { notes[i].sentAt = now }
+    selectedNoteIDs = []
+    noteStore?.save(notes)
+  }
+
+  /// Retoma la sesión enlazada o abre una nueva en el worktree de la rama (o en el repo).
+  public func sendNotesToClaude() {
+    guard let s = session else { return }
+    let list = notesToSend
+    guard !list.isEmpty else { return }
+    let prompt = notesPrompt(list)
+    let branch = branchName ?? s.headRef
+    let dir = linkedSession.map { URL(fileURLWithPath: $0.cwd) }
+      ?? s.repo.worktrees().first { $0.branch == branch }.map { URL(fileURLWithPath: $0.path) } ?? s.repo.root
+    do {
+      if let linked = linkedSession {
+        try ClaudeLauncher.resume(sessionID: linked.id, prompt: prompt, in: dir)
+      } else {
+        try ClaudeLauncher.open(prompt: prompt, model: claudeModelID, in: dir)
+      }
+      markSent(list)
+    } catch { errorMessage = error.localizedDescription }
+  }
+
+  /// Copia el prompt para pegarlo en un chat de Claude Desktop.
+  public func copyNotesForClaude() {
+    let list = notesToSend
+    guard !list.isEmpty else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(notesPrompt(list), forType: .string)
+    markSent(list)
+  }
+
+  func toggleNoteSelection(_ id: UUID) {
+    if selectedNoteIDs.contains(id) { selectedNoteIDs.remove(id) } else { selectedNoteIDs.insert(id) }
   }
 
   // MARK: - Revisión
@@ -482,77 +742,11 @@ public final class AppModel: ObservableObject {
     if let url = currentPR?.url.flatMap(URL.init(string:)) { NSWorkspace.shared.open(url) }
   }
 
-  // MARK: - Agente de flujos
-
-  /// Lanza Claude Code en segundo plano para describir los flujos de la PR.
-  public func runAgent() {
-    guard let s = session else { return }
-    cancelAgent()
-    agentLog = []
-    agentState = .running(Date())
-    let skeleton = flows
-    let agent = ClaudeAgent()
-    self.agent = agent
-    let head = s.headSHA
-    let model = claudeModelID
-    agentModelID = nil
-    Task.detached {
-      let prompt = AgentFlows.prompt(s, skeleton: skeleton ?? FlowBuilder.build(session: s))
-      agent.start(
-        prompt: prompt, schema: AgentFlows.schema, model: model, in: s.repo.root,
-        onEvent: { line in Task { @MainActor in self.agentLog.append(line) } },
-        onModel: { id in Task { @MainActor in self.agentModelID = id } },
-        onFinish: { result in
-          Task { @MainActor in
-            guard self.session?.headSHA == head else { return }
-            switch result {
-            case .success(let event):
-              if let report = AgentFlows.parse(resultEvent: event) {
-                try? FileManager.default.createDirectory(at: self.agentCacheURL(s).deletingLastPathComponent(), withIntermediateDirectories: true)
-                let used = AgentFlows.modelID(resultEvent: event) ?? self.agentModelID ?? model
-                try? JSONEncoder().encode(CachedReport(model: used, report: report)).write(to: self.agentCacheURL(s))
-                self.show(report, model: used)
-              } else {
-                self.agentState = .failed("Claude terminó pero su respuesta no tiene el formato esperado.")
-              }
-            case .failure(let error):
-              self.agentState = .failed(error.localizedDescription)
-              if error.localizedDescription.contains("authenticate") { self.claudeAuth = .loggedOut }
-            }
-          }
-        })
-    }
-  }
-
-  public func cancelAgent() {
-    agent?.cancel()
-    agent = nil
-    if case .running = agentState { agentState = .idle }
-  }
-
-  private func show(_ report: AgentReport, model: String?) {
-    guard let s = session else { return }
-    agentReport = report
-    agentModelID = model.flatMap { $0.isEmpty ? nil : $0 }
-    agentFlows = AgentFlows.verify(report, session: s)
-    agentState = .done
-  }
-
-  private struct CachedReport: Codable {
-    let model: String?
-    let report: AgentReport
-  }
-
-  private func agentCacheURL(_ s: ReviewSession) -> URL {
-    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("HexLens/agent-\(s.baseSHA.prefix(12))-\(s.headSHA).json")
-  }
-
   // MARK: - Claude
 
   public func explainPR() {
     guard let s = session else { return }
-    launchClaude(ExplainPrompt.pr(s, flows: flows ?? []))
+    launchClaude(ExplainPrompt.pr(s))
   }
 
   public func explainFile(_ path: String) {
@@ -560,66 +754,18 @@ public final class AppModel: ObservableObject {
     launchClaude(ExplainPrompt.file(s, path: path))
   }
 
-  public func explainFlow(_ flow: FlowNode) {
-    guard let s = session else { return }
-    launchClaude(ExplainPrompt.flow(s, flow: flow))
-  }
-
-  /// Seguir preguntando en Terminal sobre un flujo descrito por el agente.
-  public func askAbout(_ flow: VerifiedFlow) {
-    guard let s = session else { return }
-    let steps = flow.steps.map { String(repeating: "  ", count: $0.step.depth ?? 0) + "→ \($0.step.symbol) — \($0.step.what)" }
-    launchClaude("""
-      Quiero entender a fondo este flujo de la PR. Explícamelo paso a paso, conciso, señalando qué es nuevo y qué revisaría.
-
-      \(ExplainPrompt.context(s))
-
-      Flujo: \(flow.flow.title)\(flow.flow.trigger.map { " (\($0))" } ?? "")
-      \(flow.flow.summary)
-      \(steps.joined(separator: "\n"))
-      """)
-  }
-
-  /// Estado de la sesión de la CLI `claude`, la misma que usa el agente.
-  public func checkClaudeAuth() {
-    if claudeAuth == .unknown { claudeAuth = .checking }
-    Task.detached {
-      let state = Self.readClaudeAuth()
-      await MainActor.run { self.claudeAuth = state }
-    }
-  }
-
-  nonisolated static func readClaudeAuth() -> ClaudeAuth {
-    guard let out = try? Shell.run("zsh", ["-lc", "claude auth status"]),
-      let start = out.firstIndex(of: "{"), let end = out.lastIndex(of: "}"),
-      let json = try? JSONSerialization.jsonObject(with: Data(out[start...end].utf8)) as? [String: Any]
-    else { return .loggedOut }
-    guard json["loggedIn"] as? Bool == true else { return .loggedOut }
-    return .loggedIn((json["email"] ?? json["account"] ?? json["emailAddress"]) as? String)
-  }
-
-  /// Abre Terminal con `claude auth login` y, al detectar la sesión, lanza el agente.
-  public func loginClaude() {
-    do { try ClaudeLauncher.login() } catch { errorMessage = error.localizedDescription; return }
-    claudeAuth = .checking
-    authPoll?.cancel()
-    authPoll = Task {
-      for _ in 0..<200 {
-        try? await Task.sleep(for: .seconds(3))
-        if Task.isCancelled { return }
-        let state = await Task.detached { Self.readClaudeAuth() }.value
-        if case .loggedIn = state {
-          claudeAuth = state
-          if case .done = agentState {} else { runAgent() }
-          return
-        }
-      }
-      claudeAuth = .loggedOut
-    }
-  }
-
   private func launchClaude(_ prompt: String) {
     guard let s = session else { return }
     do { try ClaudeLauncher.open(prompt: prompt, model: claudeModelID, in: s.repo.root) } catch { errorMessage = error.localizedDescription }
   }
+}
+
+/// Nota en edición: `id == nil` si es nueva.
+struct NoteDraft: Identifiable {
+  let noteID: UUID?
+  let path: String
+  let startLine: Int
+  let endLine: Int
+  var body: String
+  var id: String { "\(noteID?.uuidString ?? "new")|\(path)|\(startLine)" }
 }
