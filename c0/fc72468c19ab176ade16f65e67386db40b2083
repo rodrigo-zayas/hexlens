@@ -1,0 +1,21 @@
+.github/workflows/sync-develop.yml
+  s_d6efb71f7a515c::t_46b8f75f7ba87f 3,14,19-20,25,27,31-36,38-52
+README.md
+  s_d6efb71f7a515c::t_4ff331fdabcef7 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0fc72468c19ab176ade16f65e67386db40b2083",
+  "prompts": {},
+  "sessions": {
+    "s_d6efb71f7a515c": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "8205446b-c15a-4bea-8072-b7901d715950",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
