@@ -1,0 +1,37 @@
+Sources/HexLensUI/CodeView.swift
+  s_4727cc1cd4df26::t_7c6c6674a832be 516-519,522-533,694-695,702-706,710-714,716-737,861-875,916
+Sources/HexLensUI/Cursor.swift
+  s_4727cc1cd4df26::t_76dd10e6b92e4b 1-15
+Sources/HexLensUI/DetailView.swift
+  s_4727cc1cd4df26::t_8e872b6ef82322 116,118,161,169,175,179,186,190-191,202,212,237,272-273,279,305,332,403,439,441-442,457,481,484,486
+Sources/HexLensUI/GraphCanvas.swift
+  s_4727cc1cd4df26::t_266e175425743a 142
+Sources/HexLensUI/MarkdownPreview.swift
+  s_4727cc1cd4df26::t_de62f0ed622be6 30,101
+Sources/HexLensUI/PRPickerView.swift
+  s_4727cc1cd4df26::t_8f262b7eea6704 29,31,45,57,63,69,123,130
+Sources/HexLensUI/QuickOpenView.swift
+  s_4727cc1cd4df26::t_32b47c9c3b6aec 45
+Sources/HexLensUI/RootView.swift
+  s_4727cc1cd4df26::t_acf600c9bfbf28 21,121,175
+Sources/HexLensUI/SidebarView.swift
+  s_4727cc1cd4df26::t_0b507f15751da9 52,97,117-118,148,154-155,188
+Sources/HexLensUI/UsagesPopupView.swift
+  s_4727cc1cd4df26::t_6d360e38c9a4a6 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82fbc1054138f8ed11868563c4c5b7188fa36980",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
