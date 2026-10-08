@@ -33,3 +33,26 @@ final class MarkdownBlocksTests: XCTestCase {
     XCTAssertEqual(b, [.quote([.paragraph("uno dos")]), .rule, .paragraph("texto")])
   }
 }
+
+final class MarkdownBlocksLinesTests: XCTestCase {
+  func testLineRanges() {
+    let r = MarkdownBlocks.parseWithLines("# T\n\npárrafo\nsigue\n\n- a\n- b\n\n```\nx\n\ny\n```\n> q\n> r")
+    XCTAssertEqual(r.map(\.lines), [0..<1, 2..<4, 5..<7, 8..<13, 13..<15])
+    XCTAssertEqual(r.count, 5)
+  }
+
+  func testWrapperMatchesAndCRLF() {
+    let s = "a\r\n\r\n| h |\r\n|---|\r\n| c |"
+    XCTAssertEqual(MarkdownBlocks.parseWithLines(s).map(\.block), MarkdownBlocks.parse(s))
+    XCTAssertEqual(MarkdownBlocks.parseWithLines(s).map(\.lines), [0..<1, 2..<5])
+  }
+
+  func testDiffAddedAndRemovals() {
+    let d = DiffParser.parse("diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,4 +1,4 @@\n # T\n-viejo\n-otro\n+nuevo\n fin\n-final\n")["a.md"]!
+    let m = MarkdownDiff(diff: d, isNewFile: false)
+    XCTAssertEqual(m.added, [2])
+    XCTAssertEqual(m.removals.map(\.anchor), [1, 3])
+    XCTAssertEqual(m.removals[0].lines, ["viejo", "otro"])
+    XCTAssertEqual(m.removals[0].oldLine, 2)
+  }
+}

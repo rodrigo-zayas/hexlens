@@ -24,10 +24,21 @@ public enum MarkdownBlocks {
     parse(lines: source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n"))
   }
 
-  private static func parse(lines: [String]) -> [MarkdownBlock] {
+  /// Como `parse`, con el rango de líneas (base 0, sobre el texto original) que ocupa cada bloque.
+  public static func parseWithLines(_ source: String) -> [(block: MarkdownBlock, lines: Range<Int>)] {
+    parseRanged(lines: source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n"))
+  }
+
+  private static func parse(lines: [String]) -> [MarkdownBlock] { parseRanged(lines: lines).map(\.block) }
+
+  private static func parseRanged(lines: [String]) -> [(block: MarkdownBlock, lines: Range<Int>)] {
     var blocks: [MarkdownBlock] = []
+    var ranges: [Range<Int>] = []
     var i = 0
     while i < lines.count {
+      let start = i
+      let before = blocks.count
+      defer { if blocks.count > before { ranges.append(start..<i) } }
       let line = lines[i]
       let t = line.trimmingCharacters(in: .whitespaces)
       if t.isEmpty { i += 1; continue }
@@ -98,7 +109,7 @@ public enum MarkdownBlocks {
         if para.isEmpty { i += 1 } else { blocks.append(.paragraph(para.joined(separator: " "))) }
       }
     }
-    return blocks
+    return Array(zip(blocks, ranges)).map { (block: $0, lines: $1) }
   }
 
   // MARK: - Piezas
@@ -205,5 +216,45 @@ public enum MarkdownBlocks {
       return out
     }
     return build(base: 0)
+  }
+}
+
+/// Qué líneas de un Markdown cambian, sacado del diff existente (sin algoritmo propio).
+public struct MarkdownDiff: Equatable, Sendable {
+  public struct Removal: Equatable, Sendable {
+    /// Líneas de la cabeza (base 0) que preceden a la eliminación: se muestra antes del primer bloque que empieza en o tras este valor.
+    public var anchor: Int
+    /// Primera línea eliminada en la base (base 1), para abrir el código en ella.
+    public var oldLine: Int
+    public var lines: [String]
+  }
+
+  public var isNewFile: Bool
+  /// Líneas añadidas de la cabeza (base 1).
+  public var added: Set<Int>
+  public var removals: [Removal]
+
+  public init(diff: FileDiff, isNewFile: Bool) {
+    self.isNewFile = isNewFile
+    var added = Set<Int>()
+    var removals: [Removal] = []
+    var headSeen = 0
+    var run: Removal?
+    for l in diff.lines {
+      if l.kind == .removed {
+        if run == nil { run = Removal(anchor: headSeen, oldLine: l.oldNumber ?? 0, lines: []) }
+        run?.lines.append(l.text)
+        continue
+      }
+      if let r = run { removals.append(r); run = nil }
+      switch l.kind {
+      case .added: added.insert(l.newNumber ?? 0); headSeen = l.newNumber ?? headSeen
+      case .context: headSeen = l.newNumber ?? headSeen
+      default: break
+      }
+    }
+    if let r = run { removals.append(r) }
+    self.added = added
+    self.removals = removals
   }
 }
