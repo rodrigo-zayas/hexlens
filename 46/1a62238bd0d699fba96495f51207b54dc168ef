@@ -1,0 +1,31 @@
+.gitignore
+  s_d6efb71f7a515c::t_577eeeac14f40e 63-65
+scripts/next-version.sh
+  s_d6efb71f7a515c::t_cefbdbe119a731 1-37
+scripts/build-app.sh
+  s_d6efb71f7a515c::t_1c418491801f80 3,6-7,24-25
+.github/workflows/ci.yml
+  s_d6efb71f7a515c::t_994950e686b09f 1-22
+.github/workflows/release.yml
+  s_d6efb71f7a515c::t_b55707b335459e 1-58
+.github/workflows/sync-develop.yml
+  s_d6efb71f7a515c::t_601604d24c3aca 1-42
+README.md
+  s_d6efb71f7a515c::t_da923211736c35 24-35,82-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "461a62238bd0d699fba96495f51207b54dc168ef",
+  "prompts": {},
+  "sessions": {
+    "s_d6efb71f7a515c": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "8205446b-c15a-4bea-8072-b7901d715950",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
