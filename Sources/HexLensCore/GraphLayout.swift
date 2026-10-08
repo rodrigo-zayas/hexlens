@@ -118,8 +118,14 @@ public struct GraphLayout: Sendable {
   public static func technology(of component: String?) -> String? {
     guard let c = component else { return nil }
     let last = c.components(separatedBy: " · ").last ?? c
-    return last.components(separatedBy: " (").first
+    let tech = last.components(separatedBy: " (").first ?? last
+    // Solo tecnologías conocidas: en otros perfiles el sufijo es un namespace, no un chip.
+    return knownTechnologies.contains(tech) ? tech : nil
   }
+
+  static let knownTechnologies: Set<String> = [
+    "rest", "pipe", "kafka", "grpc", "mongo", "db2", "jdbc", "jpa", "redis",
+  ]
 
   /// Filas máximas de un contexto antes de partirlo en más columnas de nodos.
   static let maxRows = 9
