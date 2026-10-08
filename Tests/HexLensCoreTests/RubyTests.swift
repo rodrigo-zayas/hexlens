@@ -287,4 +287,29 @@ final class RubyNavigationTests: XCTestCase {
     XCTAssertFalse(links.contains(.member(path: path, name: "save")))
     XCTAssertFalse(links.contains(.type(path: path)))
   }
+
+  func testTopLevelConstantInsideNamespaceDoesNotResolveToNamespaceFile() {
+    let src = """
+    module Dam
+      module V1
+        class AccessControlListsController < ApplicationController
+          def show
+            @list = AccessControlList.find_by!(external_id: params[:id])
+          end
+        end
+      end
+    end
+    """
+    let p = "app/controllers/dam/v1/access_control_lists_controller.rb"
+    let idx = RepoIndex(
+      paths: ["app/models/dam.rb", "app/models/access_control_list.rb", "app/models/dam/asset.rb", p],
+      analyzers: [RubyAnalyzer()])
+    let t = RubyLexer.tokens(src)
+    let links = CodeLinker.rubyLinks(
+      semantics: RubyLexer.semantics(text: src, tokens: t), facts: RubyAnalyzer().analyze(path: p, source: src), ownPath: p, index: idx
+    ).map(\.1)
+    XCTAssertTrue(links.contains(.type(path: "app/models/access_control_list.rb")))
+    XCTAssertTrue(links.contains(.member(path: "app/models/access_control_list.rb", name: "find_by!")))
+    XCTAssertFalse(links.contains { if case .type("app/models/dam.rb") = $0 { return true }; if case .member("app/models/dam.rb", _) = $0 { return true }; return false })
+  }
 }

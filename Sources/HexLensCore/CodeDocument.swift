@@ -143,9 +143,15 @@ public enum CodeLinker {
     func resolve(_ chain: String) -> String? {
       if let c = cache[chain] { return c }
       var found: String?
-      for k in stride(from: namespace.count, through: 0, by: -1) {
-        let fqn = (Array(namespace.prefix(k)) + [chain]).joined(separator: ".")
-        if let p = index.pathByFQN[fqn] ?? index.enclosing(fqn) { found = p; break }
+      // Búsqueda léxica de Ruby: del namespace más interno al global. Dentro de cada nivel solo se
+      // sube por la propia cadena (`A.B.C` → `A.B` → `A`), nunca al namespace del fichero, para que
+      // `AccessControlList` dentro de `Dam::V1` no acabe en `dam.rb`.
+      let parts = chain.components(separatedBy: ".")
+      search: for k in stride(from: namespace.count, through: 0, by: -1) {
+        for j in stride(from: parts.count, through: 1, by: -1) {
+          let fqn = (Array(namespace.prefix(k)) + parts.prefix(j)).joined(separator: ".")
+          if let p = index.pathByFQN[fqn] { found = p; break search }
+        }
       }
       if found == nil, let last = chain.components(separatedBy: ".").last, let ps = index.pathsBySimpleName[last], ps.count == 1 {
         found = ps[0]
