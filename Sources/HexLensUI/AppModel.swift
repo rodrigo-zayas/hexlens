@@ -153,6 +153,8 @@ public final class AppModel: ObservableObject {
   @Published var findCaseSensitive = false
   @Published var findWholeWord = false
   @Published var findIndex = 0
+  /// Coincidencias de la vista previa de Markdown cuando está visible (sustituye a las del código).
+  @Published var previewFindCount: Int?
   @Published private(set) var findFocusSerial = 0
 
   var findMatches: [NSRange] {
@@ -182,7 +184,7 @@ public final class AppModel: ObservableObject {
 
   private func stepFind(_ d: Int) {
     guard findVisible else { return showFind() }
-    let n = findMatches.count
+    let n = previewFindCount ?? findMatches.count
     guard n > 0 else { return }
     findIndex = ((findIndex + d) % n + n) % n
   }

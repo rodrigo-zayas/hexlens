@@ -6,6 +6,8 @@ public struct MarkdownListItem: Equatable, Sendable {
   public var checked: Bool?  // nil = no es tarea
   public var text: String
   public var children: [MarkdownListItem]
+  /// Líneas (base 0, sobre el texto original) del propio elemento, sin sus sublistas.
+  public var lines: Range<Int> = 0..<0
 }
 
 public enum MarkdownBlock: Equatable, Sendable {
@@ -25,20 +27,25 @@ public enum MarkdownBlocks {
   }
 
   /// Como `parse`, con el rango de líneas (base 0, sobre el texto original) que ocupa cada bloque.
-  public static func parseWithLines(_ source: String) -> [(block: MarkdownBlock, lines: Range<Int>)] {
+  /// `parts` da la línea de origen de cada fila de tabla (la cabecera primero) y de cada línea de un bloque de código;
+  /// los elementos de lista llevan la suya en `MarkdownListItem.lines`.
+  public static func parseWithLines(_ source: String) -> [(block: MarkdownBlock, lines: Range<Int>, parts: [Int])] {
     parseRanged(lines: source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n"))
   }
 
   private static func parse(lines: [String]) -> [MarkdownBlock] { parseRanged(lines: lines).map(\.block) }
 
-  private static func parseRanged(lines: [String]) -> [(block: MarkdownBlock, lines: Range<Int>)] {
+  private static func parseRanged(lines: [String]) -> [(block: MarkdownBlock, lines: Range<Int>, parts: [Int])] {
     var blocks: [MarkdownBlock] = []
     var ranges: [Range<Int>] = []
+    var partsList: [[Int]] = []
+    var parts: [Int] = []
     var i = 0
     while i < lines.count {
       let start = i
       let before = blocks.count
-      defer { if blocks.count > before { ranges.append(start..<i) } }
+      parts = []
+      defer { if blocks.count > before { ranges.append(start..<i); partsList.append(parts) } }
       let line = lines[i]
       let t = line.trimmingCharacters(in: .whitespaces)
       if t.isEmpty { i += 1; continue }
@@ -51,6 +58,7 @@ public enum MarkdownBlocks {
           let tt = lines[i].trimmingCharacters(in: .whitespaces)
           if tt.hasPrefix(String(repeating: fence.char, count: fence.count)) && tt.allSatisfy({ $0 == fence.char }) { i += 1; break }
           body.append(lines[i])
+          parts.append(i)
           i += 1
         }
         blocks.append(.code(language: lang.isEmpty ? nil : lang.split(separator: " ").first.map(String.init), text: body.joined(separator: "\n")))
@@ -71,15 +79,17 @@ public enum MarkdownBlocks {
         blocks.append(.quote(parse(lines: inner)))
       } else if t.contains("|"), i + 1 < lines.count, isTableSeparator(lines[i + 1]) {
         let header = cells(t)
+        parts = [i]
         var rows: [[String]] = []
         i += 2
         while i < lines.count, lines[i].contains("|"), !lines[i].trimmingCharacters(in: .whitespaces).isEmpty {
           rows.append(cells(lines[i]))
+          parts.append(i)
           i += 1
         }
         blocks.append(.table(header: header, rows: rows))
       } else if listMarker(line) != nil {
-        var raw: [String] = []
+        var raw: [(index: Int, line: String)] = []
         let firstOrdered = listMarker(line)?.number != nil
         while i < lines.count {
           let l = lines[i]
@@ -92,7 +102,7 @@ public enum MarkdownBlocks {
             break
           }
           if listMarker(l) == nil, !l.hasPrefix(" "), !l.hasPrefix("\t") { break }
-          raw.append(l)
+          raw.append((i, l))
           i += 1
         }
         blocks.append(.list(buildList(raw)))
@@ -109,7 +119,7 @@ public enum MarkdownBlocks {
         if para.isEmpty { i += 1 } else { blocks.append(.paragraph(para.joined(separator: " "))) }
       }
     }
-    return Array(zip(blocks, ranges)).map { (block: $0, lines: $1) }
+    return (0..<blocks.count).map { (block: blocks[$0], lines: ranges[$0], parts: partsList[$0]) }
   }
 
   // MARK: - Piezas
@@ -187,9 +197,9 @@ public enum MarkdownBlocks {
     return nil
   }
 
-  private static func buildList(_ raw: [String]) -> [MarkdownListItem] {
+  private static func buildList(_ raw: [(index: Int, line: String)]) -> [MarkdownListItem] {
     var flat: [(indent: Int, item: MarkdownListItem)] = []
-    for line in raw {
+    for (index, line) in raw {
       if let m = listMarker(line) {
         var text = m.rest
         var checked: Bool?
@@ -197,10 +207,11 @@ public enum MarkdownBlocks {
           checked = v
           text = String(text.dropFirst(3))
         }
-        flat.append((m.indent, MarkdownListItem(number: m.number, checked: checked, text: text.trimmingCharacters(in: .whitespaces), children: [])))
+        flat.append((m.indent, MarkdownListItem(number: m.number, checked: checked, text: text.trimmingCharacters(in: .whitespaces), children: [], lines: index..<index + 1)))
       } else if !flat.isEmpty {
         let extra = line.trimmingCharacters(in: .whitespaces)
         flat[flat.count - 1].item.text += flat[flat.count - 1].item.text.isEmpty ? extra : " " + extra
+        flat[flat.count - 1].item.lines = flat[flat.count - 1].item.lines.lowerBound..<index + 1
       }
     }
     var i = 0
@@ -219,42 +230,14 @@ public enum MarkdownBlocks {
   }
 }
 
-/// Qué líneas de un Markdown cambian, sacado del diff existente (sin algoritmo propio).
+/// Qué líneas de un Markdown añade o modifica la PR, sacado del diff existente (sin algoritmo propio).
 public struct MarkdownDiff: Equatable, Sendable {
-  public struct Removal: Equatable, Sendable {
-    /// Líneas de la cabeza (base 0) que preceden a la eliminación: se muestra antes del primer bloque que empieza en o tras este valor.
-    public var anchor: Int
-    /// Primera línea eliminada en la base (base 1), para abrir el código en ella.
-    public var oldLine: Int
-    public var lines: [String]
-  }
-
   public var isNewFile: Bool
-  /// Líneas añadidas de la cabeza (base 1).
+  /// Líneas añadidas o modificadas de la cabeza (base 1).
   public var added: Set<Int>
-  public var removals: [Removal]
 
   public init(diff: FileDiff, isNewFile: Bool) {
     self.isNewFile = isNewFile
-    var added = Set<Int>()
-    var removals: [Removal] = []
-    var headSeen = 0
-    var run: Removal?
-    for l in diff.lines {
-      if l.kind == .removed {
-        if run == nil { run = Removal(anchor: headSeen, oldLine: l.oldNumber ?? 0, lines: []) }
-        run?.lines.append(l.text)
-        continue
-      }
-      if let r = run { removals.append(r); run = nil }
-      switch l.kind {
-      case .added: added.insert(l.newNumber ?? 0); headSeen = l.newNumber ?? headSeen
-      case .context: headSeen = l.newNumber ?? headSeen
-      default: break
-      }
-    }
-    if let r = run { removals.append(r) }
-    self.added = added
-    self.removals = removals
+    self.added = Set(diff.lines.filter { $0.kind == .added }.compactMap(\.newNumber))
   }
 }
