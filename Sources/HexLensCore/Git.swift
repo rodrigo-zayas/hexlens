@@ -124,7 +124,15 @@ public struct GitRepo: Sendable, Hashable {
 
   /// Usos de `word` (palabra completa) en los .java de `rev`.
   public func usages(of word: String, at rev: String, globs: [String] = ["*.java"]) -> [UsageHit] {
-    guard let out = try? git(["grep", "-n", "-w", "-F", "-e", word, rev, "--"] + globs) else { return [] }
+    search(word, at: rev, wholeWord: true, globs: globs)
+  }
+
+  /// Texto literal en todos los ficheros (o los de `globs`) de `rev`; `-I` salta binarios.
+  public func search(_ text: String, at rev: String, wholeWord: Bool = false, ignoreCase: Bool = false, globs: [String] = []) -> [UsageHit] {
+    var args = ["grep", "-n", "-I", "-F"]
+    if wholeWord { args.append("-w") }
+    if ignoreCase { args.append("-i") }
+    guard let out = try? git(args + ["-e", text, rev, "--"] + globs) else { return [] }
     return UsageSearch.parse(out, rev: rev)
   }
 

@@ -82,6 +82,8 @@ struct UsagePopupState: Equatable, Identifiable {
   var groups: [UsageGroup]
   var loading: Bool
   var changed: Set<String> = []
+  /// ⌘⇧F: texto libre en todo el repo (no usos de un símbolo).
+  var global = false
 }
 
 @MainActor
@@ -91,6 +93,7 @@ public final class AppModel: ObservableObject {
   @Published public var prFilter: PRFilter = .reviewRequested { didSet { refreshPRs() } }
   @Published public private(set) var pullRequests: [PullRequestSummary] = []
   @Published public private(set) var loadingPRs = false
+  private var prRequest = 0
   @Published public private(set) var session: ReviewSession?
   @Published public private(set) var currentPR: PullRequestSummary?
   /// Rama contra la que se compara la PR abierta, si no es su base real.
@@ -234,10 +237,15 @@ public final class AppModel: ObservableObject {
   public func refreshPRs() {
     guard let repo else { return }
     loadingPRs = true
+    pullRequests = []
     let filter = prFilter
+    prRequest += 1
+    let request = prRequest
     Task.detached {
       let result = Result { try GitHub.pullRequests(in: repo, filter: filter) }
       await MainActor.run {
+        // Solo la última petición pinta: al cambiar de pestaña rápido no aparecen las PRs de la anterior.
+        guard request == self.prRequest else { return }
         self.loadingPRs = false
         switch result {
         case .success(let prs): self.pullRequests = prs
@@ -600,6 +608,37 @@ public final class AppModel: ObservableObject {
       await MainActor.run {
         guard self.usagePopup?.word == word else { return }
         self.usagePopup = UsagePopupState(word: word, groups: groups, loading: false, changed: changed)
+      }
+    }
+  }
+
+  /// ⌘⇧F: busca en todo el repo la selección del visor o, si no hay, lo escrito en ⌘F.
+  public func showRepoSearch() {
+    var text = ""
+    if let tv = CodeNSTextView.focused, tv.window?.firstResponder === tv {
+      let sel = tv.selectedRange()
+      let s = (tv.string as NSString).substring(with: sel)
+      if sel.length > 0, sel.length <= 200, !s.contains("\n") { text = s }
+    }
+    if text.isEmpty, findVisible { text = findQuery }
+    if text.trimmingCharacters(in: .whitespaces).isEmpty {
+      usagePopup = UsagePopupState(word: "", groups: [], loading: false, global: true)
+    } else {
+      searchRepo(text)
+    }
+  }
+
+  func searchRepo(_ text: String) {
+    guard let s = session else { return }
+    usagePopup = UsagePopupState(word: text, groups: [], loading: true, global: true)
+    guard !text.isEmpty else { usagePopup?.loading = false; return }
+    let changed = Set(s.graph.changed.map(\.path))
+    Task.detached {
+      let hits = Array(s.repo.search(text, at: s.headSHA, ignoreCase: true).prefix(2000))
+      let groups = UsageSearch.group(hits)
+      await MainActor.run {
+        guard self.usagePopup?.global == true, self.usagePopup?.word == text else { return }
+        self.usagePopup = UsagePopupState(word: text, groups: groups, loading: false, changed: changed, global: true)
       }
     }
   }
