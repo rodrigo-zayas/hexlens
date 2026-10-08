@@ -23,7 +23,7 @@ public struct ReviewSession: Sendable {
 public enum ReviewLoader {
   public static func load(
     repo: GitRepo, base: String, head: String, title: String? = nil,
-    profile: ArchitectureProfile = ItxHexagonalProfile(),
+    profile: ArchitectureProfile? = nil,
     analyzers: [LanguageAnalyzer] = [JavaAnalyzer()],
     progress: (String) -> Void = { _ in }
   ) throws -> ReviewSession {
@@ -33,6 +33,8 @@ public enum ReviewLoader {
     progress("Calculando el diff…")
     let changes = try repo.changes(from: baseSHA, to: headSHA)
     let diffs = DiffParser.parse(try repo.unifiedDiff(from: baseSHA, to: headSHA))
+
+    let profile = profile ?? ProfileRegistry.detect(paths: changes.map(\.path))
 
     progress("Analizando \(changes.count) ficheros…")
     let analyzed = changes.map { c in (c, analyzers.first { $0.handles(c.path) }) }
@@ -60,7 +62,7 @@ public enum ReviewLoader {
         language: f == nil ? "other" : (analyzer?.language ?? "other"),
         packageName: f?.packageName ?? "", typeName: f?.primary?.name ?? (f == nil ? (change.path as NSString).lastPathComponent : stem),
         kind: f?.primary?.kind ?? .unknown, module: info.module, layer: info.layer, role: info.role,
-        context: info.context, packageLabel: info.packageLabel, isTest: info.isTest,
+        context: info.context, packageLabel: info.packageLabel, isTest: info.isTest, component: info.component,
         annotations: f?.annotations ?? [], supertypes: f?.supertypes ?? [],
         members: members, touchesOutsideMembers: outside, isKeyContext: false))
       if let f { facts[change.path] = f }

@@ -1,7 +1,7 @@
 import HexLensCore
 import SwiftUI
 
-/// Lienzo del hexágono: columnas por capa, cajas por paquete, nodos por fichero y aristas.
+/// Lienzo del mapa: zonas, módulos, contextos, nodos por fichero y aristas.
 public struct GraphCanvas: View {
   let graph: PRGraph
   let layout: GraphLayout
@@ -10,12 +10,14 @@ public struct GraphCanvas: View {
   var reviewed: Set<String> = []
   var onSelect: (String) -> Void = { _ in }
   var onHover: (String?) -> Void = { _ in }
+  private(set) var zoom: CGFloat = 1
 
   public init(
     graph: PRGraph, layout: GraphLayout, selectedID: String? = nil, hoveredID: String? = nil,
     reviewed: Set<String> = [], onSelect: @escaping (String) -> Void = { _ in },
-    onHover: @escaping (String?) -> Void = { _ in }
+    onHover: @escaping (String?) -> Void = { _ in }, zoom: CGFloat = 1
   ) {
+    self.zoom = zoom
     self.graph = graph
     self.layout = layout
     self.selectedID = selectedID
@@ -24,6 +26,24 @@ public struct GraphCanvas: View {
     self.onSelect = onSelect
     self.onHover = onHover
   }
+
+  mutating func zoomOverride(_ z: CGFloat) { zoom = z }
+
+  static let zoneColors: [Color] = [.blue, .green, .orange, .purple, .gray]
+
+  static func symbol(forTechnology tech: String) -> String {
+    switch tech {
+    case "rest": "network"
+    case "pipe", "kafka": "arrow.left.arrow.right"
+    case "grpc": "point.3.connected.trianglepath.dotted"
+    case "mongo": "leaf"
+    case "db2", "jdbc", "jpa": "cylinder"
+    case "redis": "memorychip"
+    default: "cube"
+    }
+  }
+
+  private var showLabels: Bool { zoom >= 0.5 }
 
   private var focus: String? { hoveredID ?? selectedID }
 
@@ -45,36 +65,51 @@ public struct GraphCanvas: View {
   public var body: some View {
     let near = neighborhood
     ZStack(alignment: .topLeading) {
-      ForEach(layout.columns) { column in
-        RoundedRectangle(cornerRadius: 10)
-          .fill(Color.primary.opacity(0.03))
-          .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-          .frame(width: column.frame.width, height: column.frame.height)
-          .offset(x: column.frame.minX, y: column.frame.minY)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(column.layer.title.uppercased())
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-          Text(column.layer.subtitle).font(.system(size: 10)).foregroundStyle(.tertiary)
+      Text("Perfil: \(layout.profileName)")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+        .offset(x: GraphLayout.margin, y: 5)
+
+      ForEach(layout.zones) { band in
+        let tint = Self.zoneColors[band.index % Self.zoneColors.count]
+        RoundedRectangle(cornerRadius: 14)
+          .fill(tint.opacity(0.07))
+          .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(tint.opacity(0.28)))
+          .frame(width: band.frame.width, height: band.frame.height)
+          .offset(x: band.frame.minX, y: band.frame.minY)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(band.zone.title).font(.system(size: 22, weight: .bold)).foregroundStyle(tint)
+          Text(band.zone.subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
         }
-        .offset(x: column.frame.minX + 14, y: column.frame.minY + 10)
+        .lineLimit(1)
+        .frame(width: band.frame.width - 28, alignment: .leading)
+        .offset(x: band.frame.minX + 14, y: band.frame.minY + 12)
       }
 
-      ForEach(layout.groups) { group in
-        RoundedRectangle(cornerRadius: 7)
-          .fill(Color(nsColor: .windowBackgroundColor).opacity(0.65))
-          .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 1))
-          .frame(width: group.frame.width, height: group.frame.height)
-          .offset(x: group.frame.minX, y: group.frame.minY)
-        HStack(spacing: 4) {
-          Text(group.title).font(.system(size: 11, weight: .medium))
-          if !group.subtitle.isEmpty {
-            Text(group.subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+      ForEach(layout.containers) { box in
+        let radius: CGFloat = box.level == 1 ? 10 : 7
+        RoundedRectangle(cornerRadius: radius)
+          .fill(box.level == 1 ? Color(nsColor: .windowBackgroundColor).opacity(0.75) : Color.primary.opacity(0.03))
+          .overlay(
+            RoundedRectangle(cornerRadius: radius)
+              .strokeBorder(box.level == 1 ? Color.secondary.opacity(0.4) : Color.secondary.opacity(0.2), lineWidth: 1))
+          .frame(width: box.frame.width, height: box.frame.height)
+          .offset(x: box.frame.minX, y: box.frame.minY)
+        HStack(spacing: 5) {
+          if let tech = box.technology {
+            Label(tech, systemImage: Self.symbol(forTechnology: tech))
+              .font(.system(size: 10, weight: .medium))
+              .padding(.horizontal, 6).padding(.vertical, 2)
+              .background(Color.accentColor.opacity(0.14), in: Capsule())
+          }
+          Text(box.title).font(.system(size: box.level == 1 ? 13 : 11, weight: box.level == 1 ? .semibold : .medium))
+          if !box.subtitle.isEmpty {
+            Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
           }
         }
         .lineLimit(1)
-        .frame(width: group.frame.width - 16, alignment: .leading)
-        .offset(x: group.frame.minX + 8, y: group.frame.minY + 6)
+        .frame(width: box.frame.width - 16, alignment: .leading)
+        .offset(x: box.frame.minX + 8, y: box.frame.minY + (box.level == 1 ? 8 : 4))
       }
 
       Canvas { ctx, _ in
@@ -99,7 +134,8 @@ public struct GraphCanvas: View {
           reviewed: reviewed.contains(unit.id),
           isEntry: unit.id == graph.entryPoint,
           tests: graph.tests(of: unit.id).count,
-          violations: graph.violations(of: unit.id).count)
+          violations: graph.violations(of: unit.id).count,
+          showLabels: showLabels)
           .frame(width: frame.width, height: frame.height)
           .contentShape(Rectangle())
           .onTapGesture { onSelect(unit.id) }
@@ -136,8 +172,8 @@ public struct GraphCanvas: View {
     path.addCurve(to: end, control1: c1, control2: c2)
 
     let base: Color = violation ? .red : emphasised ? .accentColor : .secondary
-    let color = base.opacity(dimmed ? 0.12 : emphasised ? 0.95 : 0.45)
-    let width: CGFloat = emphasised ? 2 : 1.1
+    let color = base.opacity(dimmed ? 0.08 : emphasised ? 0.95 : 0.28)
+    let width: CGFloat = emphasised ? 2 : 0.9
     let dash: [CGFloat] = kind == .implements || kind == .extends ? [6, 4] : kind == .tests ? [2, 3] : []
     ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
 
@@ -166,8 +202,28 @@ struct NodeView: View {
   let isEntry: Bool
   let tests: Int
   let violations: Int
+  var showLabels = true
 
   var body: some View {
+    if showLabels { full } else { compact }
+  }
+
+  private var compact: some View {
+    RoundedRectangle(cornerRadius: 7)
+      .fill(unit.status.color.opacity(0.55))
+      .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? Color.accentColor : .secondary.opacity(0.35), lineWidth: selected ? 3 : 1))
+      .opacity(dimmed ? 0.35 : 1)
+  }
+
+  private var direction: String? {
+    switch unit.layer {
+    case .inbound: "arrow.down.right"
+    case .outbound: "arrow.up.right"
+    default: nil
+    }
+  }
+
+  private var full: some View {
     HStack(spacing: 0) {
       Rectangle().fill(unit.status.color).frame(width: 4)
       HStack(spacing: 7) {
@@ -178,6 +234,9 @@ struct NodeView: View {
             .lineLimit(1)
             .truncationMode(.middle)
           HStack(spacing: 5) {
+            if let direction {
+              Image(systemName: direction).help(unit.layer == .inbound ? "Entrada" : "Salida")
+            }
             Text(unit.role.label)
             if unit.isGhost {
               Text("sin cambios").italic()

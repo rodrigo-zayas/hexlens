@@ -202,7 +202,7 @@ struct GraphBuilder {
         language: analyzer.language, packageName: f?.packageName ?? Self.split(fqn).0,
         typeName: f?.primary?.name ?? Self.split(fqn).1, kind: f?.primary?.kind ?? .unknown,
         module: info.module, layer: info.layer, role: info.role, context: info.context,
-        packageLabel: info.packageLabel, isTest: info.isTest, annotations: f?.annotations ?? [],
+        packageLabel: info.packageLabel, isTest: info.isTest, component: info.component, annotations: f?.annotations ?? [],
         supertypes: f?.supertypes ?? [], members: [], touchesOutsideMembers: false,
         isKeyContext: ghostIsSupertype.contains(fqn)
           || Set(referrers.compactMap { unitByID[$0]?.layer }).count > 1)
@@ -237,7 +237,7 @@ struct GraphBuilder {
       guard let f = facts[u.id] else { continue }
       let info = ArchInfo(
         module: u.module, layer: u.layer, role: u.role, context: u.context,
-        packageLabel: u.packageLabel, isTest: false)
+        packageLabel: u.packageLabel, isTest: false, component: u.component)
       let added = diffs[u.id]?.addedText ?? []
       for imp in f.imports {
         var fqn = imp.isWildcard ? String(imp.name.dropLast(2)) : imp.name

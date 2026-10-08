@@ -125,47 +125,31 @@ struct CenterPane: View {
 
 struct GraphPane: View {
   @EnvironmentObject var model: AppModel
+  @State private var showPercent = false
 
   var body: some View {
     VStack(spacing: 0) {
-      ScrollViewReader { proxy in
-        ScrollView([.horizontal, .vertical]) {
-          if let graph = model.graph {
-            GraphCanvas(
-              graph: graph, layout: model.layout, selectedID: model.selectedID, hoveredID: model.hoveredID,
-              reviewed: model.reviewed,
-              onSelect: { model.select($0) }, onHover: { model.hoveredID = $0 })
-              .scaleEffect(model.zoom, anchor: .topLeading)
-              .frame(width: model.layout.size.width * model.zoom, height: model.layout.size.height * model.zoom, alignment: .topLeading)
+      if let graph = model.graph {
+        MapScrollView(model: model, graph: graph)
+          .overlay(alignment: .bottomTrailing) {
+            Text("\(Int(model.zoom * 100)) %")
+              .font(.caption.monospacedDigit())
+              .padding(.horizontal, 8).padding(.vertical, 4)
+              .background(.regularMaterial, in: Capsule())
+              .padding(10)
+              .opacity(showPercent ? 1 : 0)
+              .allowsHitTesting(false)
           }
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-        .onChange(of: model.selectedID) { _, id in
-          guard let id, model.layout.frames[id] != nil else { return }
-          withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
-        }
-        .onAppear {
-          // Al cargar, la selección (punto de entrada) llega antes que el lienzo.
-          DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if let id = model.selectedID, model.layout.frames[id] != nil { proxy.scrollTo(id, anchor: .center) }
+          .onChange(of: model.zoom) { _, _ in
+            withAnimation(.easeIn(duration: 0.1)) { showPercent = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+              withAnimation(.easeOut(duration: 0.4)) { showPercent = false }
+            }
           }
-        }
+      } else {
+        Color(nsColor: .textBackgroundColor)
       }
-      .overlay(alignment: .bottomTrailing) { zoomControls }
     }
-  }
-
-  private var zoomControls: some View {
-    HStack(spacing: 2) {
-      Button { model.zoom = max(0.3, model.zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
-      Text("\(Int(model.zoom * 100)) %").font(.caption.monospacedDigit()).frame(width: 44)
-      Button { model.zoom = min(2, model.zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
-      Button("1:1") { model.zoom = 1 }
-    }
-    .buttonStyle(.borderless)
-    .padding(6)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-    .padding(10)
   }
 }
 
@@ -231,9 +215,10 @@ public struct ReviewCommands: Commands {
         .keyboardShortcut("d", modifiers: [.command, .option]).disabled(model.location == nil)
       Button("Solo código") { model.toggleCodeOnly() }.keyboardShortcut("c", modifiers: [.command, .shift])
       Divider()
-      Button("Acercar") { model.zoom = min(2, model.zoom + 0.1) }.keyboardShortcut("+")
-      Button("Alejar") { model.zoom = max(0.3, model.zoom - 0.1) }.keyboardShortcut("-")
+      Button("Acercar") { model.zoomIn() }.keyboardShortcut("+")
+      Button("Alejar") { model.zoomOut() }.keyboardShortcut("-")
       Button("Tamaño real") { model.zoom = 1 }.keyboardShortcut("0")
+      Button("Ajustar a la ventana") { model.fitToWindow() }.keyboardShortcut("9")
     }
   }
 }

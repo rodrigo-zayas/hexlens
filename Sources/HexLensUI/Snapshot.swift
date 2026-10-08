@@ -14,7 +14,7 @@ public enum Snapshot {
       return true
     }
     let ids = Set(units.map(\.id))
-    let layout = GraphLayout.compute(units: units, edges: g.edges.filter { ids.contains($0.from) && ids.contains($0.to) })
+    let layout = GraphLayout.compute(units: units, edges: g.edges.filter { ids.contains($0.from) && ids.contains($0.to) }, profile: session.profile)
     let view = GraphCanvas(graph: g, layout: layout, selectedID: selected)
       .background(Color(nsColor: .textBackgroundColor))
       .environment(\.colorScheme, .light)

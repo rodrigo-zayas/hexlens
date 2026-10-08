@@ -151,6 +151,7 @@ public struct CodeUnit: Identifiable, Hashable, Codable, Sendable {
   public var context: String?
   public var packageLabel: String
   public var isTest: Bool
+  public var component: String? = nil
   public var annotations: [String]
   public var supertypes: [String]
   public var members: [MemberChange]
@@ -210,5 +211,11 @@ public enum ContextMode: String, CaseIterable, Identifiable, Sendable {
     case .key: "Contexto clave"  // supertipos y lo que une capas
     case .all: "Todo el contexto"
     }
+  }
+}
+
+extension CodeUnit {
+  public var archInfo: ArchInfo {
+    ArchInfo(module: module, layer: layer, role: role, context: context, packageLabel: packageLabel, isTest: isTest, component: component)
   }
 }
