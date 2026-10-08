@@ -194,7 +194,7 @@ struct CodeTextView: NSViewRepresentable {
       textView.backgroundColor = theme.background
       container.strip.theme = theme
       textView.textStorage?.setAttributedString(Self.attributed(content, theme: theme))
-      textView.scroll(.zero)
+      textView.scroll(NSPoint(x: textView.leftEdge, y: 0))
     }
     applyHighlights(textView, theme: theme, coordinator: c, textChanged: textChanged)
     container.strip.needsDisplay = true
@@ -306,9 +306,13 @@ final class CodeNSTextView: NSTextView {
 
   /// Nunca más estrecho que el área visible: si no, al pasar de un fichero ancho a uno estrecho
   /// el clip se queda con origen x negativo y el código aparece desplazado a la derecha.
+  /// El margen es un `NSRulerView` superpuesto: el clip reserva su ancho con `contentInsets.left`, así que
+  /// la columna 0 del texto se ve con el origen en x = -ancho del margen, no en 0.
+  var leftEdge: CGFloat { -(enclosingScrollView?.contentView.contentInsets.left ?? 0) }
+
   override func setFrameSize(_ newSize: NSSize) {
     var size = newSize
-    if let clip = enclosingScrollView?.contentView { size.width = max(size.width, clip.bounds.width) }
+    if let clip = enclosingScrollView?.contentView { size.width = max(size.width, clip.bounds.width + leftEdge) }
     super.setFrameSize(size)
   }
 
@@ -768,7 +772,7 @@ final class CodeNSTextView: NSTextView {
     r.origin.x += textContainerOrigin.x
     r.origin.y += textContainerOrigin.y
     let b = clip.bounds
-    let x: CGFloat = r.maxX + 8 <= b.width ? 0 : max(0, r.maxX + 40 - b.width)
+    let x: CGFloat = r.maxX + 8 <= b.width + leftEdge ? leftEdge : r.maxX + 40 - b.width
     let y = (r.minY >= b.minY && r.maxY <= b.maxY) ? b.minY : max(0, r.minY - b.height / 3)
     scroll(NSPoint(x: x, y: y))
     enclosingScrollView?.reflectScrolledClipView(clip)
@@ -787,7 +791,7 @@ final class CodeNSTextView: NSTextView {
     r.origin.y += textContainerOrigin.y
     // Línea objetivo a un tercio de la altura visible, como al navegar en el IDE; siempre desde la columna 0.
     let bounds = enclosingScrollView?.contentView.bounds ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-    scroll(NSPoint(x: 0, y: max(0, r.minY - bounds.height / 3)))
+    scroll(NSPoint(x: leftEdge, y: max(0, r.minY - bounds.height / 3)))
     enclosingScrollView?.reflectScrolledClipView(enclosingScrollView!.contentView)
     // El indicador hace scroll hasta ver todo su rango: se limita al texto de la línea que ya cabe
     // en pantalla (sin sangría) para que no desplace la vista en horizontal.
@@ -795,7 +799,7 @@ final class CodeNSTextView: NSTextView {
     let indent = text.rangeOfCharacter(from: CharacterSet.whitespaces.inverted).location
     guard indent != NSNotFound else { return }
     let fits = lm.glyphRange(
-      forBoundingRect: NSRect(x: 0, y: r.minY - textContainerOrigin.y, width: max(bounds.width - textContainerOrigin.x - 8, 1), height: max(r.height, 1)),
+      forBoundingRect: NSRect(x: 0, y: r.minY - textContainerOrigin.y, width: max(bounds.width + leftEdge - textContainerOrigin.x - 8, 1), height: max(r.height, 1)),
       in: tc)
     let visibleChars = lm.characterRange(forGlyphRange: fits, actualGlyphRange: nil)
     let end = min(start + length, NSMaxRange(visibleChars))
