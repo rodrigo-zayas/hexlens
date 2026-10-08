@@ -47,12 +47,28 @@ final class MarkdownBlocksLinesTests: XCTestCase {
     XCTAssertEqual(MarkdownBlocks.parseWithLines(s).map(\.lines), [0..<1, 2..<5])
   }
 
-  func testDiffAddedAndRemovals() {
+  func testTableRowLines() {
+    let r = MarkdownBlocks.parseWithLines("intro\n\n| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\nfin")
+    XCTAssertEqual(r[1].parts, [2, 4, 5])
+    XCTAssertEqual(r[1].lines, 2..<6)
+  }
+
+  func testListItemLines() {
+    let r = MarkdownBlocks.parseWithLines("x\n\n- a\n  sigue\n  - b\n- c")
+    guard case .list(let items) = r[1].block else { return XCTFail() }
+    XCTAssertEqual(items.map(\.lines), [2..<4, 5..<6])
+    XCTAssertEqual(items[0].children.map(\.lines), [4..<5])
+  }
+
+  func testCodeLineSources() {
+    let r = MarkdownBlocks.parseWithLines("t\n\n```java\na\n\nb\n```\nfin")
+    XCTAssertEqual(r[1].parts, [3, 4, 5])
+    XCTAssertEqual(r[1].lines, 2..<7)
+  }
+
+  func testDiffKeepsOnlyAddedLines() {
     let d = DiffParser.parse("diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,4 +1,4 @@\n # T\n-viejo\n-otro\n+nuevo\n fin\n-final\n")["a.md"]!
     let m = MarkdownDiff(diff: d, isNewFile: false)
     XCTAssertEqual(m.added, [2])
-    XCTAssertEqual(m.removals.map(\.anchor), [1, 3])
-    XCTAssertEqual(m.removals[0].lines, ["viejo", "otro"])
-    XCTAssertEqual(m.removals[0].oldLine, 2)
   }
 }

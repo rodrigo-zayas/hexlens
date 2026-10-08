@@ -18,6 +18,7 @@ struct DetailView: View {
         Divider()
         switch tab {
         case .code where Self.isMarkdown(location.path) && markdownPreview:
+          if model.findVisible { FindBar() }
           markdownPane(location.path, unit: unit, session: session)
         case .code:
           if let content = model.content(for: location.path) {
@@ -64,6 +65,8 @@ struct DetailView: View {
         text: source, path: path,
         changes: inPR ? unit.map { ($0.additions, $0.deletions) } : nil,
         diff: inPR && !isDeleted ? unit.flatMap(session.diff(for:)).map { MarkdownDiff(diff: $0, isNewFile: unit?.status == .added) } : nil,
+        find: model.findVisible ? .init(query: model.findQuery, caseSensitive: model.findCaseSensitive, wholeWord: model.findWholeWord, index: model.findIndex) : nil,
+        onMatchCount: { model.previewFindCount = $0 },
         onShowChanges: { markdownPreview = false },
         onOpenLine: { line in
           markdownPreview = false
@@ -71,6 +74,7 @@ struct DetailView: View {
         },
         onOpenPath: { model.go(to: CodeLocation(path: $0, line: nil)) })
         .id(path)
+        .onDisappear { model.previewFindCount = nil }
     } else {
       ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
     }
@@ -168,11 +172,12 @@ struct DetailView: View {
         Picker("", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
           .pickerStyle(.segmented).labelsHidden().fixedSize().handCursor()
         if tab == .code, Self.isMarkdown(path) {
-          Button { markdownPreview.toggle() } label: {
-            Image(systemName: markdownPreview ? "chevron.left.forwardslash.chevron.right" : "doc.richtext")
+          Picker("", selection: $markdownPreview) {
+            Text("Vista previa").tag(true)
+            Text("Código").tag(false)
           }
-          .help(markdownPreview ? "Ver el código fuente con los cambios" : "Ver la vista previa renderizada")
-          .handCursor()
+          .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small).handCursor()
+          .help("Vista previa renderizada o código fuente con los cambios")
         }
         if tab == .code, !(Self.isMarkdown(path) && markdownPreview) {
           Toggle("Completo", isOn: Binding(get: { model.fullFile }, set: { _ in model.toggleFullFile() }))
@@ -422,7 +427,7 @@ struct FindBar: View {
   @FocusState private var focused: Bool
 
   var body: some View {
-    let count = model.findMatches.count
+    let count = model.previewFindCount ?? model.findMatches.count
     HStack(spacing: 6) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
       TextField("Buscar", text: $model.findQuery)
