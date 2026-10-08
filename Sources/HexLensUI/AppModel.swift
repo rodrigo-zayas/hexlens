@@ -105,6 +105,11 @@ public final class AppModel: ObservableObject {
   @Published public var contextMode: ContextMode = .none { didSet { relayout() } }
   @Published public var strategy: ReadingStrategy = .insideOut { didSet { recomputeOrder() } }
   @Published public var zoom: CGFloat = 1
+  /// Cada incremento pide ajustar el mapa a la ventana.
+  @Published public private(set) var fitRequest = 0
+  public func fitToWindow() { fitRequest += 1 }
+  public func zoomIn() { zoom = min(3, zoom * 1.25) }
+  public func zoomOut() { zoom = max(0.2, zoom / 1.25) }
   @Published public var appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .dark {
     didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
   }
@@ -293,6 +298,7 @@ public final class AppModel: ObservableObject {
     busy = nil
     recomputeOrder()
     relayout()
+    fitRequest += 1
     select(session.graph.entryPoint ?? order.first, recordHistory: false)
   }
 
@@ -320,7 +326,9 @@ public final class AppModel: ObservableObject {
     guard let graph else { layout = GraphLayout(); return }
     let units = graph.units.filter(isVisible)
     let ids = Set(units.map(\.id))
-    layout = GraphLayout.compute(units: units, edges: graph.edges.filter { ids.contains($0.from) && ids.contains($0.to) })
+    layout = GraphLayout.compute(
+      units: units, edges: graph.edges.filter { ids.contains($0.from) && ids.contains($0.to) },
+      profile: session?.profile ?? ProfileRegistry.detect(paths: graph.units.map(\.path)))
   }
 
   private func recomputeOrder() {

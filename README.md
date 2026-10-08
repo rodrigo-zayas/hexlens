@@ -4,6 +4,11 @@ App nativa de macOS para revisar PRs de Java como un hexágono. Cada fichero de 
 
 ![HexLens con la PR #46870](docs/app.png)
 
+## Añadir un perfil de arquitectura
+
+1. Crea un tipo que implemente `ArchitectureProfile` (`id`, `name`, `languages`, `classify`, `violation`, `matchScore(paths:)` y `zone(for:)`).
+2. Añádelo a `ProfileRegistry.all`. No hay que tocar nada más: la detección, el layout y el dibujo usan sus zonas.
+
 ## Qué resuelve
 
 GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexagonal eso desordena la historia: el controller sale antes que el puerto que usa, los tests se mezclan con el código, y no se ve si un adaptador se salta la aplicación. HexLens reordena la misma PR por arquitectura:
@@ -12,7 +17,9 @@ GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexago
 - **Notas a Claude**: `⌥⌘↩` (o «Enviar a Claude» en la lista de notas) manda las notas no enviadas —o las seleccionadas con ⌘clic— a la sesión de Claude enlazada a la rama de la PR (`claude --resume`); si no hay, abre una sesión nueva en el worktree de la rama. «Copiar» deja el texto en el portapapeles para pegarlo en Claude Desktop. La sesión se detecta sola en `~/.claude/projects` y puedes cambiarla o quitarla desde el menú «Sesión de Claude» de la sección Notas. Las enviadas llevan un icono de avión de papel y se pueden reenviar. La sección Notas y los métodos tocados van colapsados por defecto (se recuerda el estado).
 - **Visor de código tipo IntelliJ**: fichero completo con los cambios marcados, colores de IntelliJ (claro y oscuro) y margen de números. Clic en una clase o en `objeto.metodo()` para ir a su definición, aunque esté fuera de la PR. Atrás y adelante con `⌘⌥←` / `⌘⌥→`, cambios con `⌘⌥↑` / `⌘⌥↓`. En una interfaz, salto a sus implementaciones. Búsqueda en el fichero con `⌘F` (resalta todo, `⌘G` / `⌘⇧G` siguiente y anterior; opciones de mayúsculas y palabra completa). Estructura del fichero con `⌘F12` (tipos, métodos y campos filtrables; marca los cambiados), migas `Clase › método` sobre el visor, resaltado de los usos del identificador bajo el cursor y franja de marcas a la derecha (cambios, notas y búsqueda) en la que se puede hacer clic. Diff unificado o lado a lado (base a la izquierda, cabeza a la derecha, scroll vertical sincronizado) con el conmutador de la cabecera o `⌥⌘D`. «Buscar usos» (`⌥F7` o clic derecho) abre un popup con todos los usos del identificador en el repo, agrupados por fichero y filtrables, y `↑` / `↓` + `Enter` saltan a la línea. Plegado de código (imports plegados por defecto, chevron en el margen o `⌘-` / `⌘+` en el cursor, `⌘⇧-` / `⌘⇧+` para todo); navegar o buscar dentro de una región plegada la despliega.
 - **Explicar con Claude**: abre Terminal con una sesión de `claude` en el repo y un prompt que pide una explicación concisa de la PR o de un fichero. Se puede seguir preguntando.
-- **Grafo** con columnas Entrada → Aplicación → Dominio → Salida, cajas por paquete y aristas `usa` / `implementa`.
+- **Grafo jerárquico** según el perfil de arquitectura detectado: zonas (en ITX Infraestructura → Aplicación → Dominio, y Boot aparte) → módulos/componentes con chip de tecnología (`amanda · pipe`, `mongo`…) → contextos → ficheros. Entrada/salida es una flecha (↘ / ↗) en el nodo. Aristas finas y curvas; al pasar el ratón o seleccionar se resaltan las conectadas y se atenúa el resto. Con zoom < 50 % solo quedan los títulos de módulo y contexto.
+- **Gestos del mapa**: pellizco para hacer zoom, dos dedos para desplazar (con inercia), doble toque con dos dedos para smart zoom, ⌘ + rueda para zoom en el cursor y arrastrar el fondo para mover. ⌘+ / ⌘- / ⌘0 con animación y **⌘9** ajusta el mapa a la ventana (también al cargar una PR).
+- **Perfiles con autodetección**: se elige el lenguaje dominante de los cambios y, de sus perfiles, el de mayor `matchScore`; si ninguno pasa de 0,2 se usa el más parecido y, como último recurso, `GenericProfile`. El nombre del perfil sale en la cabecera del mapa y en el informe.
 - **Orden de lectura** sugerido: dominio hacia fuera, entrada hacia dentro, tests primero o más grande primero. Cada test va pegado a la clase que prueba.
 - **Punto de entrada**: la pieza más conectada dentro de la PR.
 - **Métodos tocados** por fichero (`+ nuevo`, `~ cambiado`, `− quitado`), no solo líneas.
@@ -72,7 +79,8 @@ Claude Desktop, en `~/Library/Application Support/Claude/claude_desktop_config.j
 | Extractor ligero de Java: paquete, imports, tipos, supertipos, anotaciones y rangos de métodos. No compila ni resuelve tipos | `Analysis/JavaAnalyzer.swift` |
 | Convenciones AMIGA: módulos `*-domain/-application/-infrastructure/-components-*`, paquetes `com.inditex.<app>.<capa>.<contexto>` | `Architecture/ArchitectureProfile.swift` |
 | Aristas por imports, wildcards y mismo paquete. Contexto, tests y violaciones | `Graph.swift` |
-| Layout por columnas con orden por baricentro | `GraphLayout.swift` |
+| Layout jerárquico zona → módulo → contexto con orden por baricentro | `GraphLayout.swift` |
+| Perfiles genéricos y registro (`ProfileRegistry.all`) | `Architecture/GenericProfiles.swift` |
 | UI SwiftUI | `Sources/HexLensUI` |
 
 Para otros lenguajes o arquitecturas hay dos puntos de extensión:

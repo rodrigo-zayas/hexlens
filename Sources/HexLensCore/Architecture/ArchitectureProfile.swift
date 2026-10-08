@@ -7,12 +7,36 @@ public struct ArchInfo: Hashable, Sendable {
   public var context: String?
   public var packageLabel: String
   public var isTest: Bool
+  /// Nombre legible del módulo de infraestructura (`amanda · pipe`, `rest (API propio)`, `mongo`).
+  public var component: String? = nil
+}
+
+/// Zona del mapa: una columna con cabecera. `order` fija el orden de izquierda a derecha.
+public struct MapZone: Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let order: Int
+  public let subtitle: String
+
+  public init(id: String, title: String, order: Int, subtitle: String = "") {
+    self.id = id
+    self.title = title
+    self.order = order
+    self.subtitle = subtitle
+  }
 }
 
 /// Convenciones de arquitectura de un tipo de repo. La de ITX es la primera; otras (Clean,
 /// Spring Modulith, jMolecules…) serían perfiles nuevos sin tocar el resto.
 public protocol ArchitectureProfile: Sendable {
+  var id: String { get }
   var name: String { get }
+  /// Lenguajes a los que aplica; vacío = cualquiera.
+  var languages: Set<String> { get }
+  /// 0…1: cuánto encaja el repo con el perfil según las rutas de los cambios.
+  func matchScore(paths: [String]) -> Double
+  /// Zona del mapa en la que cae un fichero.
+  func zone(for info: ArchInfo) -> MapZone
   func classify(path: String, facts: SourceFacts?) -> ArchInfo
   /// Regla de dependencias violada por `importing`, si la hay.
   func violation(from: ArchInfo, fromPackage: String, importing fqn: String) -> (String, Violation.Severity)?
@@ -24,7 +48,59 @@ public protocol ArchitectureProfile: Sendable {
 public struct ItxHexagonalProfile: ArchitectureProfile {
   public init() {}
 
+  public let id = "itx-hexagonal"
   public let name = "ITX hexagonal (AMIGA)"
+  public let languages: Set<String> = ["java"]
+
+  static let infraZone = MapZone(id: "infra", title: "Infraestructura", order: 1, subtitle: "adaptadores de entrada y salida")
+  static let appZone = MapZone(id: "application", title: "Aplicación", order: 2, subtitle: "casos de uso y servicios")
+  static let domainZone = MapZone(id: "domain", title: "Dominio", order: 3, subtitle: "entidades, puertos, eventos")
+  static let bootZone = MapZone(id: "boot", title: "Boot / Configuración", order: 4, subtitle: "arranque y wiring")
+  static let otherZone = MapZone(id: "other", title: "Otros", order: 5, subtitle: "sin capa reconocida")
+
+  public func zone(for info: ArchInfo) -> MapZone {
+    switch info.layer {
+    case .inbound, .outbound: Self.infraZone
+    case .application: Self.appZone
+    case .domain: Self.domainZone
+    case .config: Self.bootZone
+    case .other: Self.otherZone
+    }
+  }
+
+  public func matchScore(paths: [String]) -> Double {
+    let code = paths.filter { Self.isJVMSource($0) || Self.isBuildFile($0) }
+    guard code.contains(where: Self.isJVMSource) else { return 0 }
+    var moduleHits = 0
+    var segments = Set<String>()
+    for p in code {
+      let dirs = p.split(separator: "/").dropLast().map(String.init)
+      if dirs.contains(where: Self.isLayerModule) { moduleHits += 1 }
+      for s in ["domain", "application", "infrastructure"] where dirs.contains(s) { segments.insert(s) }
+    }
+    if moduleHits > 0 { return min(1, 0.7 + 0.3 * Double(moduleHits) / Double(code.count)) }
+    return segments.count >= 2 ? 0.8 : segments.count == 1 ? 0.45 : 0
+  }
+
+  static func isJVMSource(_ path: String) -> Bool { path.hasSuffix(".java") || path.hasSuffix(".kt") }
+  static func isBuildFile(_ path: String) -> Bool {
+    ["pom.xml", "build.gradle", "build.gradle.kts"].contains((path as NSString).lastPathComponent)
+  }
+  static func isLayerModule(_ dir: String) -> Bool {
+    dir.hasSuffix("-domain") || dir.hasSuffix("-application") || dir.hasSuffix("-boot")
+      || dir.contains("-infrastructure") || dir.contains("-components-")
+  }
+
+  /// `pcproducts-components-amanda-pipe` → `amanda · pipe`; `-components-rest` → `rest (API propio)`.
+  public static func component(of module: String) -> String? {
+    guard let r = module.range(of: "-components-") else { return nil }
+    let rest = String(module[r.upperBound...])
+    let parts = rest.split(separator: "-").map(String.init)
+    guard let last = parts.last else { return nil }
+    guard techs.contains(last) else { return rest }
+    if parts.count > 1 { return parts.dropLast().joined(separator: "-") + " · " + last }
+    return ["rest", "pipe", "grpc"].contains(last) ? "\(last) (API propio)" : last
+  }
 
   static let markers = ["domain", "application", "infrastructure", "components", "boot"]
   static let techs: Set<String> = ["rest", "pipe", "grpc", "mongo", "db2", "kafka", "jdbc", "jpa", "redis"]
@@ -60,7 +136,9 @@ public struct ItxHexagonalProfile: ArchitectureProfile {
 
     guard let facts else {
       let (layer, role) = Self.nonCode(fileName: fileName, path: path)
-      return ArchInfo(module: module, layer: layer, role: role, context: nil, packageLabel: module, isTest: isTest)
+      return ArchInfo(
+        module: module, layer: layer, role: role, context: nil, packageLabel: module, isTest: isTest,
+        component: Self.component(of: module))
     }
 
     let primaryName = facts.primary?.name ?? stem
@@ -87,7 +165,9 @@ public struct ItxHexagonalProfile: ArchitectureProfile {
     let all = Set(segs)
 
     func info(_ layer: Layer, _ role: Role, _ ctx: String? = context) -> ArchInfo {
-      ArchInfo(module: module, layer: layer, role: role, context: ctx, packageLabel: label, isTest: false)
+      ArchInfo(
+        module: module, layer: layer, role: role, context: ctx, packageLabel: label, isTest: false,
+        component: Self.component(of: module))
     }
     func suffix(_ s: String...) -> Bool { s.contains { typeName.hasSuffix($0) } }
 
