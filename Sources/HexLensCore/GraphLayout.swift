@@ -115,18 +115,29 @@ public struct GraphLayout: Sendable {
     return last.components(separatedBy: " (").first
   }
 
+  /// Filas máximas de un contexto antes de partirlo en más columnas de nodos.
+  static let maxRows = 9
+  static let maxColumns = 4
+
+  static func columns(for count: Int) -> Int {
+    min(maxColumns, max(1, Int((Double(count) / Double(maxRows)).rounded(.up))))
+  }
+
   static func place(_ zones: [ZoneGroup], name: String) -> GraphLayout {
     var layout = GraphLayout()
     layout.profileName = name
     let nodeWidth = node.width
-    let contextWidth = nodeWidth + contextPad * 2
-    let moduleWidth = contextWidth + modulePad * 2
-    let zoneWidth = moduleWidth + zonePad * 2
+    func gridWidth(_ cols: Int) -> CGFloat { CGFloat(cols) * nodeWidth + CGFloat(cols - 1) * nodeGap }
     var maxBottom: CGFloat = 0
-    var bands: [(Int, MapZone, CGFloat)] = []
+    var bands: [(Int, MapZone, CGFloat, CGFloat)] = []
+    var x = margin
 
     for (i, zg) in zones.enumerated() {
-      let x = margin + CGFloat(i) * (zoneWidth + zoneGap)
+      // Todos los módulos de una zona comparten ancho para que la columna se lea limpia.
+      let widestGrid = zg.modules.flatMap(\.contexts).map { gridWidth(columns(for: $0.ids.count)) }.max() ?? nodeWidth
+      let contextWidth = widestGrid + contextPad * 2
+      let moduleWidth = contextWidth + modulePad * 2
+      let zoneWidth = moduleWidth + zonePad * 2
       var y = margin + zoneHeader
       for module in zg.modules {
         let moduleTop = y
@@ -134,23 +145,24 @@ public struct GraphLayout: Sendable {
         y += moduleHeader
         for ctx in module.contexts {
           let ctxX = mx + modulePad
+          let top = y
+          if ctx.title != nil { y += contextHeader }
+          let cols = columns(for: ctx.ids.count)
+          for (k, id) in ctx.ids.enumerated() {
+            let col = k % cols, row = k / cols
+            layout.frames[id] = CGRect(
+              x: ctxX + contextPad + CGFloat(col) * (nodeWidth + nodeGap),
+              y: y + CGFloat(row) * (node.height + nodeGap), width: nodeWidth, height: node.height)
+          }
+          let rows = (ctx.ids.count + cols - 1) / cols
+          y += CGFloat(rows) * (node.height + nodeGap)
           if let title = ctx.title {
-            let top = y
-            y += contextHeader
-            for id in ctx.ids {
-              layout.frames[id] = CGRect(x: ctxX + contextPad, y: y, width: nodeWidth, height: node.height)
-              y += node.height + nodeGap
-            }
             y += contextPad - nodeGap
             layout.containers.append(Container(
               id: "\(module.id):\(title)", level: 2, title: title, subtitle: "", technology: nil,
               zoneID: zg.zone.id, frame: CGRect(x: ctxX, y: top, width: contextWidth, height: y - top)))
             y += contextGap
           } else {
-            for id in ctx.ids {
-              layout.frames[id] = CGRect(x: ctxX + contextPad, y: y, width: nodeWidth, height: node.height)
-              y += node.height + nodeGap
-            }
             y += contextGap - nodeGap
           }
         }
@@ -161,15 +173,15 @@ public struct GraphLayout: Sendable {
         y += moduleGap
       }
       maxBottom = max(maxBottom, y)
-      bands.append((i, zg.zone, x))
+      bands.append((i, zg.zone, x, zoneWidth))
+      x += zoneWidth + zoneGap
     }
 
     let height = max(maxBottom + margin, 300)
-    layout.zones = bands.map { i, zone, x in
-      Zone(zone: zone, index: i, frame: CGRect(x: x, y: margin, width: zoneWidth, height: height - margin * 2))
+    layout.zones = bands.map { i, zone, x, w in
+      Zone(zone: zone, index: i, frame: CGRect(x: x, y: margin, width: w, height: height - margin * 2))
     }
-    let count = CGFloat(zones.count)
-    let width = margin * 2 + count * zoneWidth + max(count - 1, 0) * zoneGap
+    let width = zones.isEmpty ? margin * 2 : x - zoneGap + margin
     layout.size = CGSize(width: max(width, 400), height: height)
     return layout
   }

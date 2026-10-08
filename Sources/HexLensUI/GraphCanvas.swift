@@ -27,8 +27,6 @@ public struct GraphCanvas: View {
     self.onHover = onHover
   }
 
-  mutating func zoomOverride(_ z: CGFloat) { zoom = z }
-
   static let zoneColors: [Color] = [.blue, .green, .orange, .purple, .gray]
 
   static func symbol(forTechnology tech: String) -> String {
@@ -44,6 +42,8 @@ public struct GraphCanvas: View {
   }
 
   private var showLabels: Bool { zoom >= 0.5 }
+  /// Alejado, los títulos crecen para seguir siendo legibles.
+  private var titleScale: CGFloat { zoom < 0.5 ? min(0.5 / max(zoom, 0.01), 2) : 1 }
 
   private var focus: String? { hoveredID ?? selectedID }
 
@@ -102,8 +102,10 @@ public struct GraphCanvas: View {
               .padding(.horizontal, 6).padding(.vertical, 2)
               .background(Color.accentColor.opacity(0.14), in: Capsule())
           }
-          Text(box.title).font(.system(size: box.level == 1 ? 13 : 11, weight: box.level == 1 ? .semibold : .medium))
-          if !box.subtitle.isEmpty {
+          Text(box.title)
+            .font(.system(size: (box.level == 1 ? 13 : 10) * titleScale, weight: box.level == 1 ? .semibold : .medium))
+            .minimumScaleFactor(0.5)
+          if !box.subtitle.isEmpty && titleScale == 1 {
             Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
           }
         }
@@ -112,18 +114,9 @@ public struct GraphCanvas: View {
         .offset(x: box.frame.minX + 8, y: box.frame.minY + (box.level == 1 ? 8 : 4))
       }
 
-      Canvas { ctx, _ in
-        let bad = violatingEdges
-        // Primero las aristas apagadas, encima las del foco.
-        let edges = visibleEdges.sorted { a, _ in !(near.contains(a.from) && near.contains(a.to)) }
-        for e in edges {
-          guard let a = layout.frames[e.from], let b = layout.frames[e.to] else { continue }
-          let inFocus = (focus == nil || e.from == focus || e.to == focus)
-          drawEdge(ctx, from: a, to: b, kind: e.kind, violation: bad.contains(e.id), emphasised: focus != nil && inFocus, dimmed: !inFocus)
-        }
-      }
-      .frame(width: layout.size.width, height: layout.size.height)
-      .allowsHitTesting(false)
+      EdgeLayer(buckets: edgeBuckets(near: near))
+        .frame(width: layout.size.width, height: layout.size.height)
+        .allowsHitTesting(false)
 
       ForEach(graph.units.filter { layout.frames[$0.id] != nil }) { unit in
         let frame = layout.frames[unit.id]!
@@ -135,7 +128,8 @@ public struct GraphCanvas: View {
           isEntry: unit.id == graph.entryPoint,
           tests: graph.tests(of: unit.id).count,
           violations: graph.violations(of: unit.id).count,
-          showLabels: showLabels)
+          showLabels: showLabels,
+          zoom: zoom)
           .frame(width: frame.width, height: frame.height)
           .contentShape(Rectangle())
           .onTapGesture { onSelect(unit.id) }
@@ -147,10 +141,30 @@ public struct GraphCanvas: View {
     .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
   }
 
-  private func drawEdge(
-    _ ctx: GraphicsContext, from a: CGRect, to b: CGRect, kind: Dependency.Kind,
-    violation: Bool, emphasised: Bool, dimmed: Bool
-  ) {
+  /// Agrupa las aristas por estilo en pocos `Path` vectoriales (nítidos a cualquier zoom).
+  private func edgeBuckets(near: Set<String>) -> [EdgeBucket] {
+    let bad = violatingEdges
+    var buckets: [String: EdgeBucket] = [:]
+    for e in visibleEdges {
+      guard let a = layout.frames[e.from], let b = layout.frames[e.to] else { continue }
+      let inFocus = focus == nil || e.from == focus || e.to == focus
+      let emphasised = focus != nil && inFocus
+      let violation = bad.contains(e.id)
+      let hollow = e.kind == .implements || e.kind == .extends
+      let dash: [CGFloat] = hollow ? [6, 4] : e.kind == .tests ? [2, 3] : []
+      let base: Color = violation ? .red : emphasised ? .accentColor : .secondary
+      let opacity = !inFocus ? 0.08 : emphasised ? 0.95 : 0.28
+      let key = "\(violation)-\(emphasised)-\(inFocus)-\(e.kind)"
+      var bucket = buckets[key] ?? EdgeBucket(
+        id: key, color: base.opacity(opacity), width: emphasised ? 2 : 0.9, dash: dash, hollow: hollow,
+        order: emphasised ? 2 : inFocus ? 1 : 0)
+      Self.addEdge(&bucket, from: a, to: b, headSize: emphasised ? 9 : 7)
+      buckets[key] = bucket
+    }
+    return buckets.values.sorted { ($0.order, $0.id) < ($1.order, $1.id) }
+  }
+
+  private static func addEdge(_ bucket: inout EdgeBucket, from a: CGRect, to b: CGRect, headSize size: CGFloat) {
     var start: CGPoint, end: CGPoint, c1: CGPoint, c2: CGPoint
     if a.maxX < b.minX {
       start = CGPoint(x: a.maxX, y: a.midY); end = CGPoint(x: b.minX, y: b.midY)
@@ -166,30 +180,43 @@ public struct GraphCanvas: View {
       let dx = 30 + min(60, abs(end.y - start.y) / 6)
       c1 = CGPoint(x: start.x + dx, y: start.y); c2 = CGPoint(x: end.x + dx, y: end.y)
     }
-
-    var path = Path()
-    path.move(to: start)
-    path.addCurve(to: end, control1: c1, control2: c2)
-
-    let base: Color = violation ? .red : emphasised ? .accentColor : .secondary
-    let color = base.opacity(dimmed ? 0.08 : emphasised ? 0.95 : 0.28)
-    let width: CGFloat = emphasised ? 2 : 0.9
-    let dash: [CGFloat] = kind == .implements || kind == .extends ? [6, 4] : kind == .tests ? [2, 3] : []
-    ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
+    bucket.lines.move(to: start)
+    bucket.lines.addCurve(to: end, control1: c1, control2: c2)
 
     // Punta: triángulo hueco para implementa/extiende, flecha llena para usa.
     let angle = atan2(end.y - c2.y, end.x - c2.x)
-    let size: CGFloat = emphasised ? 9 : 7
-    var head = Path()
-    head.move(to: end)
-    head.addLine(to: CGPoint(x: end.x - size * cos(angle - .pi / 7), y: end.y - size * sin(angle - .pi / 7)))
-    head.addLine(to: CGPoint(x: end.x - size * cos(angle + .pi / 7), y: end.y - size * sin(angle + .pi / 7)))
-    head.closeSubpath()
-    if kind == .implements || kind == .extends {
-      ctx.fill(head, with: .color(Color(nsColor: .windowBackgroundColor)))
-      ctx.stroke(head, with: .color(color), lineWidth: 1.2)
-    } else {
-      ctx.fill(head, with: .color(color))
+    bucket.heads.move(to: end)
+    bucket.heads.addLine(to: CGPoint(x: end.x - size * cos(angle - .pi / 7), y: end.y - size * sin(angle - .pi / 7)))
+    bucket.heads.addLine(to: CGPoint(x: end.x - size * cos(angle + .pi / 7), y: end.y - size * sin(angle + .pi / 7)))
+    bucket.heads.closeSubpath()
+  }
+}
+
+struct EdgeBucket: Identifiable {
+  let id: String
+  let color: Color
+  let width: CGFloat
+  let dash: [CGFloat]
+  let hollow: Bool
+  let order: Int
+  var lines = Path()
+  var heads = Path()
+}
+
+struct EdgeLayer: View {
+  let buckets: [EdgeBucket]
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      ForEach(buckets) { b in
+        b.lines.stroke(b.color, style: StrokeStyle(lineWidth: b.width, lineCap: .round, dash: b.dash))
+        if b.hollow {
+          b.heads.fill(Color(nsColor: .windowBackgroundColor))
+          b.heads.stroke(b.color, lineWidth: 1.2)
+        } else {
+          b.heads.fill(b.color)
+        }
+      }
     }
   }
 }
@@ -203,15 +230,26 @@ struct NodeView: View {
   let tests: Int
   let violations: Int
   var showLabels = true
+  var zoom: CGFloat = 1
 
   var body: some View {
     if showLabels { full } else { compact }
   }
 
+  /// Alejado: solo el nombre, grande, sobre el color del estado.
   private var compact: some View {
-    RoundedRectangle(cornerRadius: 7)
-      .fill(unit.status.color.opacity(0.55))
-      .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? Color.accentColor : .secondary.opacity(0.35), lineWidth: selected ? 3 : 1))
+    Text(unit.typeName)
+      .font(.system(size: min(11 / max(zoom, 0.01), 22), weight: .semibold))
+      .strikethrough(unit.status == .deleted)
+      .lineLimit(2)
+      .minimumScaleFactor(0.4)
+      .multilineTextAlignment(.center)
+      .padding(.horizontal, 6)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(RoundedRectangle(cornerRadius: 7).fill(unit.status.color.opacity(unit.isGhost ? 0.12 : 0.3)))
+      .overlay(
+        RoundedRectangle(cornerRadius: 7)
+          .strokeBorder(selected ? Color.accentColor : .secondary.opacity(0.35), lineWidth: selected ? 4 : 1))
       .opacity(dimmed ? 0.35 : 1)
   }
 

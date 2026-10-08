@@ -63,7 +63,8 @@ public struct ItxHexagonalProfile: ArchitectureProfile {
     case .inbound, .outbound: Self.infraZone
     case .application: Self.appZone
     case .domain: Self.domainZone
-    case .config: Self.bootZone
+    // La configuración de un módulo de infraestructura se queda con su módulo.
+    case .config: info.component != nil || info.module.contains("infrastructure") ? Self.infraZone : Self.bootZone
     case .other: Self.otherZone
     }
   }
