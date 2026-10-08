@@ -1,0 +1,29 @@
+README.md
+  s_0de96d589e0b08::t_c6280bbbe75551 1,29
+dist/HexLens.app/Contents/Info.plist
+  s_0de96d589e0b08::t_5beec173a92c12 9
+dist/HexLens.app/Contents/_CodeSignature/CodeResources
+  s_0de96d589e0b08::t_faa2e01a0abcf1 6-11,13-21
+docs/logo.svg
+  s_0de96d589e0b08::t_0d42b7e9074e20 1-40
+scripts/make-icon.sh
+  s_0de96d589e0b08::t_a8d72506e155c3 1-35
+scripts/build-app.sh
+  s_0de96d589e0b08::t_c1e246363ecef6 12,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29f7da47ff2e063f4454bef37496e45743234a7e",
+  "prompts": {},
+  "sessions": {
+    "s_0de96d589e0b08": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "75ed5e02-d2b7-4b47-8146-56dc91e6b644",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
