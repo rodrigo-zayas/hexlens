@@ -113,9 +113,9 @@ struct DetailView: View {
     return VStack(alignment: .leading, spacing: Metrics.s) {
       HStack(spacing: Metrics.s) {
         Button { model.back() } label: { Image(systemName: "chevron.left") }
-          .disabled(model.backStack.isEmpty).help("Atrás (⌘⌥←)")
+          .disabled(model.backStack.isEmpty).help("Atrás (⌘⌥←)").handCursor(!model.backStack.isEmpty)
         Button { model.forward() } label: { Image(systemName: "chevron.right") }
-          .disabled(model.forwardStack.isEmpty).help("Adelante (⌘⌥→)")
+          .disabled(model.forwardStack.isEmpty).help("Adelante (⌘⌥→)").handCursor(!model.forwardStack.isEmpty)
         HStack(spacing: 4) {
           Text(info.0)
           Image(systemName: "chevron.right").font(.system(size: 8))
@@ -158,7 +158,7 @@ struct DetailView: View {
             Button { model.goToImplementation(impl) } label: {
               Text(((impl as NSString).lastPathComponent as NSString).deletingPathExtension).font(Typo.secondary)
             }
-            .buttonStyle(.link)
+            .buttonStyle(.link).handCursor()
             .help(impl)
           }
         }
@@ -166,28 +166,29 @@ struct DetailView: View {
 
       HStack(spacing: Metrics.s) {
         Picker("", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-          .pickerStyle(.segmented).labelsHidden().fixedSize()
+          .pickerStyle(.segmented).labelsHidden().fixedSize().handCursor()
         if tab == .code, Self.isMarkdown(path) {
           Button { markdownPreview.toggle() } label: {
             Image(systemName: markdownPreview ? "chevron.left.forwardslash.chevron.right" : "doc.richtext")
           }
           .help(markdownPreview ? "Ver el código fuente con los cambios" : "Ver la vista previa renderizada")
+          .handCursor()
         }
         if tab == .code, !(Self.isMarkdown(path) && markdownPreview) {
           Toggle("Completo", isOn: Binding(get: { model.fullFile }, set: { _ in model.toggleFullFile() }))
-            .toggleStyle(.checkbox).fixedSize()
+            .toggleStyle(.checkbox).fixedSize().handCursor()
             .help("Fichero entero con los cambios marcados, o solo los fragmentos cambiados")
           if inPR {
             Picker("", selection: Binding(get: { model.sideBySide }, set: { _ in model.toggleSideBySide() })) {
               Text("Unificado").tag(false)
               Text("Lado a lado").tag(true)
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small).handCursor()
             .help("Diff unificado o lado a lado (⌥⌘D)")
           }
           if inPR {
-            Button { model.jumpChange(-1) } label: { Image(systemName: "arrow.up") }.help("Cambio anterior (⌘⌥↑)")
-            Button { model.jumpChange(1) } label: { Image(systemName: "arrow.down") }.help("Cambio siguiente (⌘⌥↓)")
+            Button { model.jumpChange(-1) } label: { Image(systemName: "arrow.up") }.help("Cambio anterior (⌘⌥↑)").handCursor()
+            Button { model.jumpChange(1) } label: { Image(systemName: "arrow.down") }.help("Cambio siguiente (⌘⌥↓)").handCursor()
           }
         }
         Spacer()
@@ -198,6 +199,7 @@ struct DetailView: View {
             Label("Revisado", systemImage: model.reviewed.contains(path) ? "checkmark.circle.fill" : "circle")
               .labelStyle(.titleAndIcon)
           }
+          .handCursor()
         }
         Menu {
           Button("Explicar con Claude") { model.explainFile(path) }
@@ -207,7 +209,7 @@ struct DetailView: View {
             NSPasteboard.general.setString(path, forType: .string)
           }
         } label: { Image(systemName: "ellipsis.circle") }
-          .menuStyle(.borderlessButton).fixedSize()
+          .menuStyle(.borderlessButton).fixedSize().handCursor()
       }
       .controlSize(.small)
     }
@@ -232,7 +234,7 @@ private struct MembersDisclosure: View {
           } label: {
             Text("\(m.change.sign) \(m.name)").font(Typo.code).foregroundStyle(m.change.color)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.plain).handCursor()
           .help(m.signature)
           .disabled(m.change == .removed)
         }
@@ -267,14 +269,14 @@ struct RelationsView: View {
           if let files = model.impact[u.id] {
             Text("\(files.count) ficheros nombran \(u.typeName)").foregroundStyle(.secondary).font(.caption)
           } else {
-            Button("Buscar quién lo usa") { model.loadImpact(u.id) }.controlSize(.small)
-            Button("Buscar usos") { model.findUsages(of: u.typeName) }.controlSize(.small)
+            Button("Buscar quién lo usa") { model.loadImpact(u.id) }.controlSize(.small).handCursor()
+            Button("Buscar usos") { model.findUsages(of: u.typeName) }.controlSize(.small).handCursor()
           }
         }
         if let files = model.impact[u.id] {
           ForEach(files.prefix(60), id: \.self) { f in
             Button((f as NSString).lastPathComponent) { model.go(to: CodeLocation(path: f, line: nil)) }
-              .buttonStyle(.link).font(.system(size: 11, design: .monospaced)).help(f)
+              .buttonStyle(.link).font(.system(size: 11, design: .monospaced)).help(f).handCursor()
           }
         }
       }
@@ -300,7 +302,7 @@ struct RelationsView: View {
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
               }
-              .buttonStyle(.plain)
+              .buttonStyle(.plain).handCursor()
               .help("\(other.layer.title) · \(other.role.label) · \(other.packageName)")
             }
           }
@@ -327,7 +329,7 @@ struct Breadcrumbs: View {
           Button { model.go(to: CodeLocation(path: path, line: e.line)) } label: {
             Text(e.kind == .method ? "\(e.name)()" : e.name)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.plain).handCursor()
         }
         Spacer()
       }
@@ -398,7 +400,7 @@ struct StructurePopup: View {
               .padding(.horizontal, 10).padding(.vertical, 3)
               .background(i == selected ? Color.accentColor.opacity(0.18) : .clear)
               .contentShape(Rectangle())
-              .onTapGesture { open(e) }
+              .onTapGesture { open(e) }.handCursor()
               .id(i)
             }
           }
@@ -434,10 +436,10 @@ struct FindBar: View {
       toggle("Aa", $model.findCaseSensitive, help: "Distinguir mayúsculas")
       toggle("W", $model.findWholeWord, help: "Palabra completa")
       Button { model.findPrevious() } label: { Image(systemName: "chevron.up") }
-        .help("Anterior (⌘⇧G)").disabled(count == 0)
+        .help("Anterior (⌘⇧G)").disabled(count == 0).handCursor(count > 0)
       Button { model.findNext() } label: { Image(systemName: "chevron.down") }
-        .help("Siguiente (⌘G)").disabled(count == 0)
-      Button { model.closeFind() } label: { Image(systemName: "xmark") }.help("Cerrar (Esc)")
+        .help("Siguiente (⌘G)").disabled(count == 0).handCursor(count > 0)
+      Button { model.closeFind() } label: { Image(systemName: "xmark") }.help("Cerrar (Esc)").handCursor()
     }
     .buttonStyle(.borderless)
     .padding(.horizontal, 10).padding(.vertical, 5)
@@ -452,7 +454,7 @@ struct FindBar: View {
 
   private func toggle(_ title: String, _ value: Binding<Bool>, help: String) -> some View {
     Toggle(isOn: value) { Text(title).font(.system(size: 11, weight: .medium, design: .monospaced)) }
-      .toggleStyle(.button).controlSize(.small).help(help)
+      .toggleStyle(.button).controlSize(.small).help(help).handCursor()
   }
 }
 
@@ -476,12 +478,12 @@ struct NoteEditor: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
       HStack {
         if let id = draft?.noteID {
-          Button("Borrar", role: .destructive) { model.noteDraft = nil; model.deleteNote(id) }
+          Button("Borrar", role: .destructive) { model.noteDraft = nil; model.deleteNote(id) }.handCursor()
         }
         Spacer()
-        Button("Cancelar") { model.noteDraft = nil }.keyboardShortcut(.cancelAction)
+        Button("Cancelar") { model.noteDraft = nil }.keyboardShortcut(.cancelAction).handCursor()
         Button("Guardar") { model.noteDraft?.body = text; model.commitDraft() }
-          .keyboardShortcut(.return, modifiers: .command)
+          .keyboardShortcut(.return, modifiers: .command).handCursor()
           .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
     }

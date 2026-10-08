@@ -513,17 +513,24 @@ final class CodeNSTextView: NSTextView {
 
   /// Clic en el margen: pliega o despliega si cae en el chevron; si no, abre la nota de esa línea.
   /// `y` en coordenadas del visor y `x` en las del margen.
-  func gutterClick(x: CGFloat, y: CGFloat) {
-    guard let lm = layoutManager, let tc = textContainer, !lines.isEmpty else { return }
+  private enum GutterTarget { case fold(Int), note(UUID) }
+
+  private func gutterTarget(x: CGFloat, y: CGFloat) -> GutterTarget? {
+    guard let lm = layoutManager, let tc = textContainer, !lines.isEmpty else { return nil }
     let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: y - textContainerOrigin.y), in: tc)
     let index = lineIndex(at: lm.characterIndexForGlyph(at: glyph))
-    if x >= Self.gutterWidth - 23, regionByStart[index] != nil {
-      toggleFold(index)
-      return
-    }
-    let line = lines[index]
-    if let n = line.newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
-      onOpenNote(span.id)
+    if x >= Self.gutterWidth - 23, regionByStart[index] != nil { return .fold(index) }
+    if let n = lines[index].newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) { return .note(span.id) }
+    return nil
+  }
+
+  func gutterIsClickable(x: CGFloat, y: CGFloat) -> Bool { gutterTarget(x: x, y: y) != nil }
+
+  func gutterClick(x: CGFloat, y: CGFloat) {
+    switch gutterTarget(x: x, y: y) {
+    case .fold(let i): toggleFold(i)
+    case .note(let id): onOpenNote(id)
+    case nil: break
     }
   }
 
@@ -684,30 +691,50 @@ final class CodeNSTextView: NSTextView {
     super.mouseDown(with: event)
   }
 
-  private func declarationRange(at p: NSPoint) -> NSRange? {
-    guard !declarations.isEmpty, let lm = layoutManager, let tc = textContainer else { return nil }
+  private func characterIndex(at p: NSPoint) -> Int? {
+    guard let lm = layoutManager, let tc = textContainer, !string.isEmpty else { return nil }
     let o = textContainerOrigin
     let pt = NSPoint(x: p.x - o.x, y: p.y - o.y)
     var fraction: CGFloat = 0
     let g = lm.glyphIndex(for: pt, in: tc, fractionOfDistanceThroughGlyph: &fraction)
     let rect = lm.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: tc)
     guard rect.contains(pt) else { return nil }
-    let c = lm.characterIndexForGlyph(at: g)
+    return lm.characterIndexForGlyph(at: g)
+  }
+
+  private func declarationRange(at p: NSPoint) -> NSRange? {
+    guard !declarations.isEmpty, let c = characterIndex(at: p) else { return nil }
     return declarations.first { c >= $0.location && c < NSMaxRange($0) }
   }
 
-  override func resetCursorRects() {
-    super.resetCursorRects()
-    guard let lm = layoutManager, let tc = textContainer else { return }
-    let o = textContainerOrigin
-    let total = (string as NSString).length
-    for r in declarations where NSMaxRange(r) <= total {
-      let g = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-      var rect = lm.boundingRect(forGlyphRange: g, in: tc)
-      rect.origin.x += o.x
-      rect.origin.y += o.y
-      if rect.height > 0 && rect.intersects(visibleRect) { addCursorRect(rect, cursor: .pointingHand) }
+  /// Enlaces, declaraciones (usos) y píldoras de código plegado.
+  private func isClickable(at p: NSPoint) -> Bool {
+    if let c = characterIndex(at: p) {
+      if c < (textStorage?.length ?? 0), textStorage?.attribute(.link, at: c, effectiveRange: nil) != nil { return true }
+      if declarations.contains(where: { c >= $0.location && c < NSMaxRange($0) }) { return true }
     }
+    if let lm = layoutManager, let tc = textContainer, !folded.isEmpty, !lines.isEmpty {
+      let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: p.y - textContainerOrigin.y), in: tc)
+      let i = lineIndex(at: lm.characterIndexForGlyph(at: glyph))
+      if folded.contains(i), let region = regionByStart[i], pillRect(region, glyph: glyph).contains(p) { return true }
+    }
+    return false
+  }
+
+  /// Código de solo lectura: flecha normal y mano solo sobre lo que se puede pulsar (nunca el cursor de texto).
+  private func updateCursor(_ event: NSEvent) {
+    (isClickable(at: convert(event.locationInWindow, from: nil)) ? NSCursor.pointingHand : NSCursor.arrow).set()
+  }
+
+  override func resetCursorRects() {
+    addCursorRect(visibleRect, cursor: .arrow)
+  }
+
+  override func cursorUpdate(with event: NSEvent) { updateCursor(event) }
+
+  override func mouseMoved(with event: NSEvent) {
+    super.mouseMoved(with: event)
+    updateCursor(event)
   }
 
   // MARK: Notas
@@ -831,6 +858,21 @@ final class CodeGutterView: NSRulerView {
     guard let tv = codeView else { return }
     tv.gutterClick(x: convert(event.locationInWindow, from: nil).x, y: tv.convert(event.locationInWindow, from: nil).y)
   }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
+    addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .cursorUpdate, .activeInActiveApp, .inVisibleRect], owner: self))
+  }
+
+  override func cursorUpdate(with event: NSEvent) { updateCursor(event) }
+  override func mouseMoved(with event: NSEvent) { updateCursor(event) }
+
+  private func updateCursor(_ event: NSEvent) {
+    guard let tv = codeView else { return }
+    let clickable = tv.gutterIsClickable(x: convert(event.locationInWindow, from: nil).x, y: tv.convert(event.locationInWindow, from: nil).y)
+    (clickable ? NSCursor.pointingHand : NSCursor.arrow).set()
+  }
 }
 
 /// Visor + franja de marcas a la derecha (cambios, notas y coincidencias).
@@ -871,6 +913,7 @@ final class ScrollMarkStrip: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
   override var isFlipped: Bool { true }
 
   private func y(_ line: Int, count: Int) -> CGFloat { (CGFloat(line) + 0.5) / CGFloat(max(count, 1)) * bounds.height }

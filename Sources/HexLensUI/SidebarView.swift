@@ -49,7 +49,7 @@ struct SidebarView: View {
           Picker("Orden", selection: $model.strategy) {
             ForEach(ReadingStrategy.allCases) { Text($0.title).tag($0) }
           }
-          .labelsHidden()
+          .labelsHidden().handCursor()
         }
         .padding(.vertical, 4)
         .selectionDisabled()
@@ -94,7 +94,7 @@ private struct FileRow: View {
         Image(systemName: reviewed ? "checkmark.circle.fill" : "circle")
           .foregroundStyle(.secondary)
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).handCursor()
       .help("Marcar revisado")
 
       Text("\(number)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.tertiary).frame(width: 20, alignment: .trailing)
@@ -114,6 +114,8 @@ private struct FileRow: View {
       if violations > 0 { Image(systemName: "exclamationmark.triangle").foregroundStyle(Semantic.error).font(.system(size: 10)) }
       Text("+\(unit.additions)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
     }
+    .contentShape(Rectangle())
+    .handCursor()
   }
 }
 
@@ -143,14 +145,14 @@ private struct NotesSection: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).handCursor()
         .help("\(n.path) · ⌘clic para seleccionar")
         .listRowBackground(model.selectedNoteIDs.contains(n.id) ? Color.accentColor.opacity(0.2) : nil)
       }
       if !model.notes.isEmpty {
         HStack {
-          Button("Enviar a Claude (\(model.notesToSend.count))") { model.sendNotesToClaude() }
-          Button("Copiar") { model.copyNotesForClaude() }
+          Button("Enviar a Claude (\(model.notesToSend.count))") { model.sendNotesToClaude() }.handCursor()
+          Button("Copiar") { model.copyNotesForClaude() }.handCursor()
         }
         .controlSize(.small)
         .disabled(model.notesToSend.isEmpty)
@@ -183,7 +185,7 @@ private struct ClaudeSessionRow: View {
         Text("Sesión de Claude: nueva")
       }
     }
-    .menuStyle(.borderlessButton)
+    .menuStyle(.borderlessButton).handCursor()
     .font(.system(size: 11))
     .foregroundStyle(.secondary)
   }

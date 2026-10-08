@@ -27,7 +27,7 @@ struct MarkdownPreview: View {
           HStack(spacing: 4) {
             Image(systemName: "plusminus.circle").foregroundStyle(.secondary)
             Text("+\(changes.additions) −\(changes.deletions) líneas en esta PR ·").foregroundStyle(.secondary)
-            Button("Ver cambios", action: onShowChanges).buttonStyle(.link)
+            Button("Ver cambios", action: onShowChanges).buttonStyle(.link).handCursor()
             Spacer()
           }
           .font(Typo.secondary)
@@ -98,7 +98,7 @@ struct MarkdownPreview: View {
       }
       .background(color.opacity(0.08))
       .contentShape(Rectangle())
-      .onTapGesture { onOpenLine(row.line) }
+      .onTapGesture { onOpenLine(row.line) }.handCursor()
       .help("Ver en el código")
     }
   }
