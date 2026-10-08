@@ -8,13 +8,12 @@ public struct GraphCanvas: View {
   var selectedID: String?
   var hoveredID: String?
   var reviewed: Set<String> = []
-  var highlight: Set<String>?
   var onSelect: (String) -> Void = { _ in }
   var onHover: (String?) -> Void = { _ in }
 
   public init(
     graph: PRGraph, layout: GraphLayout, selectedID: String? = nil, hoveredID: String? = nil,
-    reviewed: Set<String> = [], highlight: Set<String>? = nil, onSelect: @escaping (String) -> Void = { _ in },
+    reviewed: Set<String> = [], onSelect: @escaping (String) -> Void = { _ in },
     onHover: @escaping (String?) -> Void = { _ in }
   ) {
     self.graph = graph
@@ -22,7 +21,6 @@ public struct GraphCanvas: View {
     self.selectedID = selectedID
     self.hoveredID = hoveredID
     self.reviewed = reviewed
-    self.highlight = highlight
     self.onSelect = onSelect
     self.onHover = onHover
   }
@@ -85,8 +83,7 @@ public struct GraphCanvas: View {
         let edges = visibleEdges.sorted { a, _ in !(near.contains(a.from) && near.contains(a.to)) }
         for e in edges {
           guard let a = layout.frames[e.from], let b = layout.frames[e.to] else { continue }
-          let inFlow = highlight.map { $0.contains(e.from) && $0.contains(e.to) } ?? true
-          let inFocus = (focus == nil || e.from == focus || e.to == focus) && inFlow
+          let inFocus = (focus == nil || e.from == focus || e.to == focus)
           drawEdge(ctx, from: a, to: b, kind: e.kind, violation: bad.contains(e.id), emphasised: focus != nil && inFocus, dimmed: !inFocus)
         }
       }
@@ -98,7 +95,7 @@ public struct GraphCanvas: View {
         NodeView(
           unit: unit,
           selected: unit.id == selectedID,
-          dimmed: (focus != nil && !near.contains(unit.id)) || (highlight.map { !$0.contains(unit.id) } ?? false),
+          dimmed: focus != nil && !near.contains(unit.id),
           reviewed: reviewed.contains(unit.id),
           isEntry: unit.id == graph.entryPoint,
           tests: graph.tests(of: unit.id).count,

@@ -104,27 +104,19 @@ public struct RootView: View {
   }
 }
 
-/// Centro: flujos (qué hace) o mapa (dónde está), con el resumen por capa colapsado encima.
+/// Centro: barra de resumen y mapa.
 struct CenterPane: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: Metrics.m) {
-        Picker("", selection: $model.centerMode) {
-          ForEach(CenterMode.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented).labelsHidden().fixedSize()
         SummaryBar()
         Spacer(minLength: 0)
       }
       .padding(.horizontal, Metrics.m).padding(.vertical, Metrics.s)
-      SummaryDetails()
       Divider()
-      switch model.centerMode {
-      case .flows: FlowsView()
-      case .map: GraphPane()
-      }
+      GraphPane()
     }
   }
 }
@@ -192,72 +184,6 @@ struct SummaryBar: View {
             .help("Punto de entrada sugerido")
         }
       }
-    }
-  }
-}
-
-/// Resumen por capa y leyenda, colapsado por defecto.
-struct SummaryDetails: View {
-  @EnvironmentObject var model: AppModel
-  @AppStorage("summaryExpanded") private var expanded = false
-
-  var body: some View {
-    if let g = model.graph {
-      let changed = g.changed.filter { $0.isCode && !$0.isTest }
-      let byLayer = Dictionary(grouping: changed, by: \.layer)
-      DisclosureGroup(isExpanded: $expanded) {
-        VStack(alignment: .leading, spacing: Metrics.xs) {
-          ForEach(Layer.allCases, id: \.self) { layer in
-            if let us = byLayer[layer] {
-              let roles = Dictionary(grouping: us, by: \.role).sorted { $0.key.rank < $1.key.rank }
-              HStack(spacing: Metrics.s) {
-                Text("\(layer.title) \(us.count)").font(Typo.secondary.weight(.medium))
-                Text(roles.map { "\($0.value.count) \($0.key.label)" }.joined(separator: " · "))
-                  .font(Typo.secondary).foregroundStyle(.secondary).lineLimit(1)
-              }
-            }
-          }
-          let tests = g.changed.filter(\.isTest).count
-          if tests > 0 { Text("\(tests) tests").font(Typo.secondary).foregroundStyle(.secondary) }
-          Legend().padding(.top, Metrics.xs)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, Metrics.xs)
-      } label: {
-        SectionTitle("Resumen por capa y leyenda")
-      }
-      .padding(.horizontal, Metrics.m).padding(.bottom, Metrics.s)
-    }
-  }
-}
-
-struct Legend: View {
-  var body: some View {
-    HStack(spacing: Metrics.m) {
-      legendLine("usa", dash: [], color: .secondary)
-      legendLine("implementa / extiende", dash: [6, 4], color: .secondary)
-      legendLine("viola capas", dash: [], color: Semantic.error)
-      HStack(spacing: 4) {
-        RoundedRectangle(cornerRadius: 3).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2])).frame(width: 16, height: 10)
-        Text("sin cambios")
-      }
-      HStack(spacing: Metrics.s) {
-        ForEach([ChangeStatus.added, .deleted], id: \.self) { s in
-          HStack(spacing: 2) { Rectangle().fill(s.color).frame(width: 4, height: 10); Text(s.label) }
-        }
-      }
-    }
-    .font(Typo.secondary)
-    .foregroundStyle(.secondary)
-    .fixedSize()
-  }
-
-  private func legendLine(_ text: String, dash: [CGFloat], color: Color) -> some View {
-    HStack(spacing: 4) {
-      Path { p in p.move(to: CGPoint(x: 0, y: 5)); p.addLine(to: CGPoint(x: 22, y: 5)) }
-        .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: dash))
-        .frame(width: 22, height: 10)
-      Text(text)
     }
   }
 }
