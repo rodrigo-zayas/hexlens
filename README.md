@@ -21,6 +21,18 @@ GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexago
 - **Contexto**: muestra opcionalmente ficheros sin cambios que conectan piezas de la PR. "Buscar quién lo usa" lista los ficheros de fuera de la PR que nombran el tipo.
 - **Revisado** por fichero, guardado por commit de cabeza.
 
+## Descargar
+
+Cada release en [Releases](https://github.com/rodrigo-zayas/hexlens/releases) trae `HexLens-<versión>-macos-arm64.zip` (la app) y `hexlens-cli-<versión>-macos-arm64.tar.gz` (la CLI). Solo Apple Silicon, macOS 14 o superior.
+
+La app no está firmada ni notarizada por Apple, así que macOS la bloquea la primera vez. Después de moverla a `/Applications`:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HexLens.app
+```
+
+O ábrela, cierra el aviso y pulsa "Abrir igualmente" en Ajustes del Sistema → Privacidad y seguridad. Si prefieres no hacerlo, compílala tú (ver Uso).
+
 ## Uso
 
 ```bash
@@ -67,6 +79,12 @@ Para otros lenguajes o arquitecturas hay dos puntos de extensión:
 - Sin resolución de tipos, las aristas salen de imports y de nombres en el mismo paquete. Una referencia por nombre totalmente cualificado sin import no se ve.
 - La clasificación es heurística por paquete, nombre y anotaciones. Lo que no encaja cae en "servicio de infra" u "otros". Para afinarla se añaden casos a `ProfileTests`.
 - Los renombrados y movimientos cuentan como cambios normales. RefactoringMiner los separaría (ver ideas).
+
+## Contribuir
+
+- Se trabaja contra `develop` y se publica mergeando `develop` en `main`. Ninguna de las dos admite push directo, solo PR.
+- Mensajes de commit y títulos de PR en [conventional commits](https://www.conventionalcommits.org/es/). Al llegar a `main`, `feat` sube la versión minor, `fix` y `perf` la patch, y `tipo!:` o `BREAKING CHANGE` la major. El resto (`chore`, `docs`, `refactor`…) no publica release.
+- Cada push a `main` publica la release (`.github/workflows/release.yml`) y abre y mergea una PR de `main` a `develop` (`sync-develop.yml`). Si hay conflictos, el workflow falla y hay que resolverlos con una PR a `develop`.
 
 ## Investigación
 
