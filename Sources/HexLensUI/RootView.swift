@@ -224,6 +224,8 @@ public struct ReviewCommands: Commands {
       Button("Cambio anterior") { model.jumpChange(-1) }.keyboardShortcut(.upArrow, modifiers: [.command, .option])
       Divider()
       Button("Explicar la PR con Claude") { model.explainPR() }.keyboardShortcut("e", modifiers: [.command, .shift])
+      Button(model.sideBySide ? "Diff unificado" : "Diff lado a lado") { model.toggleSideBySide() }
+        .keyboardShortcut("d", modifiers: [.command, .option]).disabled(model.location == nil)
       Button("Solo código") { model.toggleCodeOnly() }.keyboardShortcut("c", modifiers: [.command, .shift])
       Divider()
       Button("Acercar") { model.zoom = min(2, model.zoom + 0.1) }.keyboardShortcut("+")

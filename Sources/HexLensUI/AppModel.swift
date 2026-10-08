@@ -113,6 +113,10 @@ public final class AppModel: ObservableObject {
   @Published public private(set) var backStack: [CodeLocation] = []
   @Published public private(set) var forwardStack: [CodeLocation] = []
   @Published public var fullFile = true
+  /// Diff lado a lado en vez de unificado (se recuerda entre sesiones).
+  @Published public var sideBySide = UserDefaults.standard.bool(forKey: "sideBySide") {
+    didSet { UserDefaults.standard.set(sideBySide, forKey: "sideBySide") }
+  }
   @Published private(set) var scrollRequest: ScrollRequest?
   private var scrollSerial = 0
   /// Línea del fichero nuevo bajo el cursor del visor (para las migas).
@@ -153,7 +157,7 @@ public final class AppModel: ObservableObject {
     guard n > 0 else { return }
     findIndex = ((findIndex + d) % n + n) % n
   }
-  private var contentCache: [String: CodeContent] = [:]
+  private var contentCache: [String: (main: CodeContent, base: CodeContent?)] = [:]
 
   @Published public var claudeModelID = UserDefaults.standard.string(forKey: "claudeModelID") ?? "" {
     didSet { UserDefaults.standard.set(claudeModelID, forKey: "claudeModelID") }
@@ -435,9 +439,15 @@ public final class AppModel: ObservableObject {
 
   // MARK: - Visor de código
 
-  func content(for path: String) -> CodeContent? {
+  /// Contenido que manda en el visor: el unificado, o la cabeza en lado a lado.
+  func content(for path: String) -> CodeContent? { contents(for: path)?.main }
+
+  /// Lado izquierdo (base) del diff lado a lado; `nil` en modo unificado o si el fichero solo tiene un lado.
+  func baseContent(for path: String) -> CodeContent? { sideBySide ? contents(for: path)?.base : nil }
+
+  private func contents(for path: String) -> (main: CodeContent, base: CodeContent?)? {
     guard let s = session else { return nil }
-    let key = "\(path)|\(fullFile)"
+    let key = "\(path)|\(fullFile)|\(sideBySide)"
     if let c = contentCache[key] { return c }
 
     let unit = s.graph.unit(path)
@@ -445,8 +455,13 @@ public final class AppModel: ObservableObject {
     let head = unit?.status == .deleted ? nil : s.store.text(path, at: s.headSHA)
     let base = changed ? s.store.text(unit?.oldPath ?? path, at: s.baseSHA) : nil
     let diff = changed ? unit.flatMap(s.diff(for:)) : nil
-    let document = CodeDocument.build(head: head, base: base, diff: diff, full: fullFile)
+    var document = CodeDocument.build(head: head, base: base, diff: diff, full: fullFile)
     guard !document.lines.isEmpty || head != nil else { return nil }
+    var baseDocument: CodeDocument?
+    if sideBySide, let split = SideBySide.build(from: document) {
+      document = split.right
+      baseDocument = split.left
+    }
 
     let isJava = path.hasSuffix(".java")
     let tokens = isJava ? JavaLexer.tokens(document.text) : []
@@ -459,8 +474,15 @@ public final class AppModel: ObservableObject {
     let c = CodeContent(
       id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
       outline: isJava && unit?.status != .deleted ? head.map(Outline.java) ?? [] : [])
-    contentCache[key] = c
-    return c
+    var baseContent: CodeContent?
+    if let baseDocument {
+      let baseTokens = isJava ? JavaLexer.tokens(baseDocument.text) : []
+      baseContent = CodeContent(
+        id: "\(s.headSHA)|\(key)|base", document: baseDocument, tokens: baseTokens,
+        semantics: JavaSemantics.analyze(text: baseDocument.text, tokens: baseTokens), links: [], staticNames: statics)
+    }
+    contentCache[key] = (c, baseContent)
+    return (c, baseContent)
   }
 
   private func requestScroll(to target: CodeLocation) {
@@ -473,6 +495,11 @@ public final class AppModel: ObservableObject {
     }
     scrollSerial += 1
     scrollRequest = ScrollRequest(line: index ?? 0, serial: scrollSerial)
+  }
+
+  public func toggleSideBySide() {
+    sideBySide.toggle()
+    if let l = location { requestScroll(to: CodeLocation(path: l.path, line: nil)) }
   }
 
   public func toggleFullFile() {
