@@ -1,0 +1,43 @@
+README.md
+  s_b1931ca09d5142::t_718cc1964a6eac 22,81-82,91
+Sources/HexLensCore/Analysis/LanguageAnalyzer.swift
+  s_b1931ca09d5142::t_292aa8e298e367 8-9,41,49-55
+Sources/HexLensCore/Analysis/RubyAnalyzer.swift
+  s_b1931ca09d5142::t_1e2d648222187d 1-254
+Sources/HexLensCore/Architecture/ArchitectureProfile.swift
+  s_b1931ca09d5142::t_e0227870066e5b 43-52
+Sources/HexLensCore/Architecture/GenericProfiles.swift
+  s_b1931ca09d5142::t_4bf1717f2188aa 91,97
+Sources/HexLensCore/Architecture/RailsProfile.swift
+  s_b1931ca09d5142::t_6fe9b4271b56ec 1-180
+Sources/HexLensCore/Graph.swift
+  s_b1931ca09d5142::t_51a5df6e37ad40 133-134,138-139,142,144,146-151,235,249,251-254
+Sources/HexLensCore/Model.swift
+  s_b1931ca09d5142::t_883f6c0548eb98 59,78-79,109-110
+Sources/HexLensCore/Outline.swift
+  s_b1931ca09d5142::t_37acebdf32c9a4 13-33
+Sources/HexLensCore/ReviewLoader.swift
+  s_b1931ca09d5142::t_b09c690827017c 27
+Sources/HexLensCore/SourceStore.swift
+  s_b1931ca09d5142::t_2be14b2dc9de26 43-45
+Sources/HexLensUI/AppModel.swift
+  s_b1931ca09d5142::t_7cd8fbd3710979 351,491
+Tests/HexLensCoreTests/RubyTests.swift
+  s_b1931ca09d5142::t_05e18548974842 1-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7db14bd7f59806a7901251fd8d9ce52ad99821f8",
+  "prompts": {},
+  "sessions": {
+    "s_b1931ca09d5142": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "58e0fd1c-853d-4835-b983-c848a82aa160",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
