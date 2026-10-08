@@ -276,6 +276,8 @@ public struct ReviewCommands: Commands {
       Button("Siguiente sin revisar") { model.nextUnreviewed() }.keyboardShortcut("]", modifiers: [.command, .shift])
       Button("Marcar revisado") { model.toggleReviewed() }.keyboardShortcut("d")
       Button("Añadir nota…") { model.requestAddNote() }.keyboardShortcut("n", modifiers: [.command, .option])
+      Button("Enviar notas a Claude") { model.sendNotesToClaude() }.keyboardShortcut(.return, modifiers: [.command, .option]).disabled(model.notesToSend.isEmpty)
+      Button("Copiar notas para Claude") { model.copyNotesForClaude() }.disabled(model.notesToSend.isEmpty)
       Divider()
       Button("Atrás") { model.back() }.keyboardShortcut(.leftArrow, modifiers: [.command, .option])
       Button("Adelante") { model.forward() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])

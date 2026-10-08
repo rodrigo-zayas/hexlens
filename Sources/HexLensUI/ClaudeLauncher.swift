@@ -17,6 +17,19 @@ enum ClaudeLauncher {
       """)
   }
 
+  /// Retoma una sesión existente con el prompt como siguiente mensaje.
+  static func resume(sessionID: String, prompt: String, in directory: URL) throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hexlens-claude-\(UUID().uuidString.prefix(8))")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let promptFile = dir.appendingPathComponent("prompt.md")
+    try prompt.write(to: promptFile, atomically: true, encoding: .utf8)
+    try run(in: dir, name: "retomar", body: """
+      cd \(quote(directory.path))
+      clear
+      exec claude --resume \(quote(sessionID)) "$(cat \(quote(promptFile.path)))"
+      """)
+  }
+
   /// Inicio de sesión de la CLI (OAuth en el navegador). Solo hace falta una vez.
   static func login() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hexlens-login")

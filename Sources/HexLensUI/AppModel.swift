@@ -112,6 +112,11 @@ public final class AppModel: ObservableObject {
   @Published var noteDraft: NoteDraft?
   @Published private(set) var addNoteSerial = 0
   private var noteStore: ReviewNoteStore?
+  /// Sesiones de Claude detectadas para la rama de la PR y la enlazada (`nil` = ninguna / nueva).
+  @Published public private(set) var claudeSessions: [ClaudeSession] = []
+  @Published public private(set) var linkedSessionID: String?
+  private var branchName: String?
+  @Published var selectedNoteIDs: Set<UUID> = []
 
   @Published var findVisible = false
   @Published var findQuery = ""
@@ -265,6 +270,7 @@ public final class AppModel: ObservableObject {
     forwardStack = []
     reviewed = Set(UserDefaults.standard.stringArray(forKey: reviewKey) ?? [])
     loadNotes(for: session, pr: pr)
+    detectClaudeSessions(for: session, pr: pr)
     busy = nil
     recomputeOrder()
     relayout()
@@ -509,6 +515,95 @@ public final class AppModel: ObservableObject {
   public func goToNote(_ id: UUID) {
     guard let n = notes.first(where: { $0.id == id }) else { return }
     go(to: CodeLocation(path: n.path, line: n.startLine))
+  }
+
+  // MARK: - Sesión de Claude
+
+  private func linkKey(_ s: ReviewSession, _ branch: String) -> String { "claudeSession:\(s.repo.root.path):\(branch)" }
+
+  /// Busca las sesiones de Claude de la rama (en el repo y en sus worktrees) y aplica el enlace guardado o la más reciente.
+  private func detectClaudeSessions(for s: ReviewSession, pr: PullRequestSummary?) {
+    let branch = pr?.headRefName ?? s.headRef
+    branchName = branch
+    claudeSessions = []
+    linkedSessionID = nil
+    let repo = s.repo
+    let key = linkKey(s, branch)
+    Task.detached {
+      let cwds = [repo.root.path] + repo.worktrees().map(\.path)
+      let found = ClaudeSessions.find(cwds: cwds, branch: branch)
+      await MainActor.run {
+        guard self.session?.headSHA == s.headSHA else { return }
+        self.claudeSessions = found
+        let saved = UserDefaults.standard.string(forKey: key)
+        // Cadena vacía = el usuario quitó el enlace a propósito: no autoseleccionar.
+        if saved == "" { self.linkedSessionID = nil }
+        else { self.linkedSessionID = saved ?? found.first?.id }
+      }
+    }
+  }
+
+  var linkedSession: ClaudeSession? { claudeSessions.first { $0.id == linkedSessionID } }
+
+  /// Enlaza la rama con una sesión; `nil` quita el enlace y el envío abrirá una sesión nueva.
+  func linkSession(_ id: String?) {
+    guard let s = session, let branch = branchName else { return }
+    linkedSessionID = id
+    let key = linkKey(s, branch)
+    if let id { UserDefaults.standard.set(id, forKey: key) } else { UserDefaults.standard.set("", forKey: key) }
+  }
+
+  // MARK: - Enviar notas a Claude
+
+  /// La selección si la hay; si no, todas las no enviadas.
+  var notesToSend: [ReviewNote] {
+    let selected = notes.filter { selectedNoteIDs.contains($0.id) }
+    return selected.isEmpty ? notes.filter { $0.sentAt == nil } : selected
+  }
+
+  private func notesPrompt(_ list: [ReviewNote]) -> String {
+    guard let s = session else { return "" }
+    return NotesPrompt.build(notes: list, pr: currentPR.map { "la PR #\($0.number) «\($0.title)»" } ?? s.title,
+                             branch: branchName ?? s.headRef, repo: s.repo.name)
+  }
+
+  private func markSent(_ list: [ReviewNote]) {
+    let ids = Set(list.map(\.id)), now = Date()
+    for i in notes.indices where ids.contains(notes[i].id) { notes[i].sentAt = now }
+    selectedNoteIDs = []
+    noteStore?.save(notes)
+  }
+
+  /// Retoma la sesión enlazada o abre una nueva en el worktree de la rama (o en el repo).
+  public func sendNotesToClaude() {
+    guard let s = session else { return }
+    let list = notesToSend
+    guard !list.isEmpty else { return }
+    let prompt = notesPrompt(list)
+    let branch = branchName ?? s.headRef
+    let dir = linkedSession.map { URL(fileURLWithPath: $0.cwd) }
+      ?? s.repo.worktrees().first { $0.branch == branch }.map { URL(fileURLWithPath: $0.path) } ?? s.repo.root
+    do {
+      if let linked = linkedSession {
+        try ClaudeLauncher.resume(sessionID: linked.id, prompt: prompt, in: dir)
+      } else {
+        try ClaudeLauncher.open(prompt: prompt, model: claudeModelID, in: dir)
+      }
+      markSent(list)
+    } catch { errorMessage = error.localizedDescription }
+  }
+
+  /// Copia el prompt para pegarlo en un chat de Claude Desktop.
+  public func copyNotesForClaude() {
+    let list = notesToSend
+    guard !list.isEmpty else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(notesPrompt(list), forType: .string)
+    markSent(list)
+  }
+
+  func toggleNoteSelection(_ id: UUID) {
+    if selectedNoteIDs.contains(id) { selectedNoteIDs.remove(id) } else { selectedNoteIDs.insert(id) }
   }
 
   // MARK: - Revisión

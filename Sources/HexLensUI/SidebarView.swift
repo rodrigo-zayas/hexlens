@@ -1,3 +1,4 @@
+import AppKit
 import HexLensCore
 import SwiftUI
 
@@ -55,7 +56,7 @@ struct SidebarView: View {
         .padding(.vertical, 4)
         .selectionDisabled()
 
-        if !model.notes.isEmpty { NotesSection().selectionDisabled() }
+        if !model.notes.isEmpty || !model.claudeSessions.isEmpty { NotesSection().selectionDisabled() }
 
         let numbers = Dictionary(model.order.enumerated().map { ($1, $0 + 1) }, uniquingKeysWith: { a, _ in a })
         ForEach(sections) { section in
@@ -132,13 +133,17 @@ private struct NotesSection: View {
 
   var body: some View {
     DisclosureGroup(isExpanded: $expanded) {
+      ClaudeSessionRow()
       ForEach(model.notes) { n in
-        Button { model.goToNote(n.id) } label: {
+        Button {
+          if NSEvent.modifierFlags.contains(.command) { model.toggleNoteSelection(n.id) } else { model.goToNote(n.id) }
+        } label: {
           VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
               Text("\((n.path as NSString).lastPathComponent):\(n.startLine == n.endLine ? "\(n.startLine)" : "\(n.startLine)-\(n.endLine)")")
                 .font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
               if n.outdated { Pill(text: "desactualizada", color: .gray) }
+              if n.sentAt != nil { Pill(text: "enviada", color: .secondary) }
             }
             Text(n.body.split(separator: "\n").first.map(String.init) ?? "")
               .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
@@ -147,10 +152,54 @@ private struct NotesSection: View {
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(n.path)
+        .help("\(n.path) · ⌘clic para seleccionar")
+        .listRowBackground(model.selectedNoteIDs.contains(n.id) ? Color.accentColor.opacity(0.2) : nil)
+      }
+      if !model.notes.isEmpty {
+        HStack {
+          Button("Enviar a Claude (\(model.notesToSend.count))") { model.sendNotesToClaude() }
+          Button("Copiar") { model.copyNotesForClaude() }
+        }
+        .controlSize(.small)
+        .disabled(model.notesToSend.isEmpty)
+        .help("Envía la selección (⌘clic) o, si no hay, las no enviadas · ⌥⌘↩")
       }
     } label: {
       Label("Notas (\(model.notes.count))", systemImage: "note.text").font(.subheadline.weight(.semibold))
     }
+  }
+}
+
+/// Sesión de Claude enlazada a la rama: título y antigüedad, con menú para cambiarla.
+private struct ClaudeSessionRow: View {
+  @EnvironmentObject var model: AppModel
+
+  var body: some View {
+    Menu {
+      ForEach(model.claudeSessions) { s in
+        Button { model.linkSession(s.id) } label: {
+          Text("\(s.id == model.linkedSessionID ? "✓ " : "")\(s.title) · \(Self.ago(s.lastActivity))")
+        }
+      }
+      if !model.claudeSessions.isEmpty { Divider() }
+      Button("Nueva sesión") { model.linkSession(nil) }
+      Button("Quitar enlace") { model.linkSession(nil) }.disabled(model.linkedSessionID == nil)
+    } label: {
+      if let s = model.linkedSession {
+        Text("Sesión de Claude: \(s.title) · \(Self.ago(s.lastActivity))").lineLimit(1)
+      } else {
+        Text("Sesión de Claude: nueva")
+      }
+    }
+    .menuStyle(.borderlessButton)
+    .font(.system(size: 11))
+    .foregroundStyle(.secondary)
+  }
+
+  static func ago(_ d: Date) -> String {
+    let f = RelativeDateTimeFormatter()
+    f.locale = Locale(identifier: "es")
+    f.unitsStyle = .short
+    return f.localizedString(for: d, relativeTo: Date())
   }
 }
