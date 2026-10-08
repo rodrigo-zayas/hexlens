@@ -120,6 +120,7 @@ struct CodeTextView: NSViewRepresentable {
     textView.linkTextAttributes = [.cursor: NSCursor.pointingHand]
     textView.delegate = context.coordinator
     scrollView.documentView = textView
+    if let lm = textView.layoutManager, lm.delegate == nil { lm.delegate = textView }
     scrollView.verticalRulerView = CodeGutterView(scrollView: scrollView, textView: textView)
     scrollView.hasVerticalRuler = true
     scrollView.rulersVisible = true
@@ -146,6 +147,7 @@ struct CodeTextView: NSViewRepresentable {
     if let current, textChanged || current != previous.current || valid != previous.matches {
       let r = valid[current]
       DispatchQueue.main.async {
+        textView.unfold(line: textView.lineIndex(at: r.location))
         textView.scrollRangeToVisible(r)
         textView.showFindIndicator(for: r)
       }
@@ -181,6 +183,7 @@ struct CodeTextView: NSViewRepresentable {
       textView.lines = content.document.lines
       textView.lineStarts = content.document.lineStarts
       textView.computeIndents()
+      textView.configureFolding(Self.foldRegions(for: content.document.lines, isJava: !content.tokens.isEmpty))
       textView.indexIdentifiers(tokens: content.tokens)
       c.reportCursor(textView)
       // Fichero nuevo entero: sin fondo verde, solo la barra del margen (como IntelliJ).
@@ -197,6 +200,14 @@ struct CodeTextView: NSViewRepresentable {
       c.lastScroll = scroll
       DispatchQueue.main.async { textView.reveal(line: scroll.line) }
     }
+  }
+
+  /// Regiones plegables en índices del documento. Sin hunks sueltos ni relleno del lado a lado (descuadraría los paneles) la llave de cierre no cuadraría.
+  static func foldRegions(for lines: [CodeLine], isJava: Bool) -> [FoldRegion] {
+    guard isJava, !lines.contains(where: { $0.kind == .separator || $0.kind == .filler }) else { return [] }
+    let index = lines.indices.filter { lines[$0].kind != .removed }
+    let found = FoldRegions.compute(lines: index.map { lines[$0].text })
+    return found.map { FoldRegion(kind: $0.kind, start: index[$0.start], hiddenEnd: index[$0.hiddenEnd], end: index[$0.end]) }
   }
 
   static func attributed(_ c: CodeContent, theme: CodeTheme) -> NSAttributedString {
@@ -400,8 +411,14 @@ final class CodeNSTextView: NSTextView {
         NSColor.systemBlue.withAlphaComponent(0.09).setFill()
         NSRect(x: 0, y: frag.minY + origin.y, width: max(self.bounds.width, rect.maxX), height: frag.height).fill()
       }
-      // Guías de indentación, como las de IntelliJ.
       let i = self.lineIndex(at: charIndex)
+      if let region = self.regionByStart[i], self.folded.contains(i) {
+        let pill = self.pillRect(region, glyph: glyphRange.location)
+        self.theme.guide.setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+        Self.pillText(region).draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + (pill.height - Self.pillText(region).size().height) / 2))
+      }
+      // Guías de indentación, como las de IntelliJ.
       if i < self.indents.count, self.indents[i] > self.indentUnit {
         let charWidth = (" " as NSString).size(withAttributes: [.font: CodeTheme.font]).width
         self.theme.guide.setFill()
@@ -414,7 +431,7 @@ final class CodeNSTextView: NSTextView {
     }
   }
 
-  static let gutterWidth: CGFloat = 50
+  static let gutterWidth: CGFloat = 62
 
   /// Margen con número de línea (nuevo o viejo), barra de cambio y marcas de nota. Lo pinta `CodeGutterView`.
   func drawGutter(in ruler: NSRulerView, rect dirty: NSRect) {
@@ -446,21 +463,189 @@ final class CodeNSTextView: NSTextView {
         (span.outdated ? self.theme.gutterText : NSColor.systemBlue).setFill()
         NSBezierPath(roundedRect: NSRect(x: 3, y: r.midY - 3.5, width: 7, height: 7), xRadius: 2, yRadius: 2).fill()
       }
+      if let region = self.regionByStart[self.lineIndex(at: lm.characterIndexForGlyph(at: glyphRange.location))] {
+        let folded = self.folded.contains(region.start)
+        let c = NSPoint(x: maxX - 14, y: r.midY)
+        let path = NSBezierPath()
+        if folded {
+          path.move(to: NSPoint(x: c.x - 2, y: c.y - 3.5)); path.line(to: NSPoint(x: c.x + 2.5, y: c.y)); path.line(to: NSPoint(x: c.x - 2, y: c.y + 3.5))
+        } else {
+          path.move(to: NSPoint(x: c.x - 3.5, y: c.y - 2)); path.line(to: NSPoint(x: c.x, y: c.y + 2.5)); path.line(to: NSPoint(x: c.x + 3.5, y: c.y - 2))
+        }
+        path.lineWidth = 1.2
+        path.lineJoinStyle = .round
+        self.theme.gutterText.setStroke()
+        path.stroke()
+      }
       guard let n = line.newNumber ?? line.oldNumber else { return }
       let label = NSAttributedString(string: "\(n)", attributes: attrs)
       let size = label.size()
-      label.draw(at: NSPoint(x: maxX - 9 - size.width, y: r.minY + (r.height - size.height) / 2))
+      label.draw(at: NSPoint(x: maxX - 21 - size.width, y: r.minY + (r.height - size.height) / 2))
     }
   }
 
-  /// Clic en el margen: abre la nota de esa línea si la hay. `y` en coordenadas del visor.
-  func gutterClick(y: CGFloat) {
+  /// Clic en el margen: pliega o despliega si cae en el chevron; si no, abre la nota de esa línea.
+  /// `y` en coordenadas del visor y `x` en las del margen.
+  func gutterClick(x: CGFloat, y: CGFloat) {
     guard let lm = layoutManager, let tc = textContainer, !lines.isEmpty else { return }
     let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: y - textContainerOrigin.y), in: tc)
-    let line = lines[lineIndex(at: lm.characterIndexForGlyph(at: glyph))]
+    let index = lineIndex(at: lm.characterIndexForGlyph(at: glyph))
+    if x >= Self.gutterWidth - 23, regionByStart[index] != nil {
+      toggleFold(index)
+      return
+    }
+    let line = lines[index]
     if let n = line.newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
       onOpenNote(span.id)
     }
+  }
+
+  // MARK: Plegado
+
+  private(set) var regions: [FoldRegion] = []
+  private(set) var folded: Set<Int> = []
+  private(set) var regionByStart: [Int: FoldRegion] = [:]
+  private var hiddenRanges: [NSRange] = []
+
+  /// Fija las regiones del fichero y pliega los imports. No invalida el layout: se llama justo antes de cambiar el texto.
+  func configureFolding(_ new: [FoldRegion]) {
+    regions = new
+    regionByStart = Dictionary(new.map { ($0.start, $0) }, uniquingKeysWith: { a, _ in a })
+    folded = Set(new.filter { $0.kind == .imports }.map(\.start))
+    rebuildHidden()
+  }
+
+  private func lineEnd(_ i: Int) -> Int { lineStarts[i] + (lines[i].text as NSString).length }
+
+  private func rebuildHidden() {
+    var out: [NSRange] = []
+    for r in regions where folded.contains(r.start) && r.hiddenEnd > r.start && lineStarts.indices.contains(r.hiddenEnd) {
+      let a = lineEnd(r.start)
+      out.append(NSRange(location: a, length: lineEnd(r.hiddenEnd) - a))
+    }
+    out.sort { $0.location < $1.location }
+    var merged: [NSRange] = []
+    for r in out {
+      if let last = merged.last, r.location <= NSMaxRange(last) {
+        merged[merged.count - 1] = NSRange(location: last.location, length: max(NSMaxRange(last), NSMaxRange(r)) - last.location)
+      } else {
+        merged.append(r)
+      }
+    }
+    hiddenRanges = merged
+  }
+
+  private func isHidden(_ offset: Int) -> Bool {
+    var lo = 0, hi = hiddenRanges.count
+    while lo < hi {
+      let mid = (lo + hi) / 2
+      if NSMaxRange(hiddenRanges[mid]) <= offset { lo = mid + 1 } else { hi = mid }
+    }
+    return lo < hiddenRanges.count && hiddenRanges[lo].location <= offset
+  }
+
+  private func applyFold() {
+    rebuildHidden()
+    let sel = selectedRange()
+    if let r = hiddenRanges.first(where: { NSLocationInRange(sel.location, $0) }) {
+      setSelectedRange(NSRange(location: r.location, length: 0))
+    }
+    if let lm = layoutManager {
+      let all = NSRange(location: 0, length: (string as NSString).length)
+      lm.invalidateGlyphs(forCharacterRange: all, changeInLength: 0, actualCharacterRange: nil)
+      lm.invalidateLayout(forCharacterRange: all, actualCharacterRange: nil)
+    }
+    needsDisplay = true
+    enclosingScrollView?.verticalRulerView?.needsDisplay = true
+  }
+
+  func toggleFold(_ start: Int) {
+    guard regionByStart[start] != nil else { return }
+    if folded.contains(start) { folded.remove(start) } else { folded.insert(start) }
+    applyFold()
+  }
+
+  /// Despliega lo que oculte esa línea (navegación, notas, búsqueda y marcas).
+  func unfold(line: Int) {
+    let hiding = folded.filter { s in regionByStart[s].map { s < line && line <= $0.hiddenEnd } ?? false }
+    guard !hiding.isEmpty else { return }
+    folded.subtract(hiding)
+    applyFold()
+  }
+
+  private var caretLine: Int { lineIndex(at: selectedRange().location) }
+
+  func foldAtCaret() {
+    let line = caretLine
+    guard let r = regions.filter({ !folded.contains($0.start) && $0.hiddenEnd > $0.start && $0.start <= line && line <= $0.end }).max(by: { $0.start < $1.start }) else { return }
+    folded.insert(r.start)
+    applyFold()
+  }
+
+  func unfoldAtCaret() {
+    let line = caretLine
+    guard let r = regions.filter({ folded.contains($0.start) && $0.start <= line && line <= $0.hiddenEnd }).max(by: { $0.start < $1.start }) else { return }
+    folded.remove(r.start)
+    applyFold()
+  }
+
+  /// Pliega todo salvo los tipos de primer nivel, para que el fichero siga siendo navegable.
+  func foldAll() {
+    var topEnd = -1
+    var top = Set<Int>()
+    for r in regions where r.kind == .block && r.start > topEnd {
+      top.insert(r.start)
+      topEnd = r.end
+    }
+    folded = Set(regions.filter { $0.hiddenEnd > $0.start && !top.contains($0.start) }.map(\.start))
+    applyFold()
+  }
+
+  func unfoldAll() {
+    folded = []
+    applyFold()
+  }
+
+  /// En el visor los atajos de plegado ganan a los del zoom del grafo (⌘+ / ⌘-).
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard event.type == .keyDown, window?.firstResponder === self, mods.contains(.command),
+      mods.isDisjoint(with: [.option, .control]), !regions.isEmpty,
+      let key = event.charactersIgnoringModifiers
+    else { return super.performKeyEquivalent(with: event) }
+    let shift = mods.contains(.shift)
+    switch key {
+    case "-", "_": shift ? foldAll() : foldAtCaret()
+    case "+", "=", "*": shift ? unfoldAll() : unfoldAtCaret()
+    default: return super.performKeyEquivalent(with: event)
+    }
+    return true
+  }
+
+  private static func pillText(_ region: FoldRegion) -> NSAttributedString {
+    NSAttributedString(
+      string: region.kind == .block && region.hidesClosing ? "…}" : "…",
+      attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+  }
+
+  /// Marcador tras el texto visible de la primera línea de una región plegada.
+  private func pillRect(_ region: FoldRegion, glyph: Int) -> NSRect {
+    let used = layoutManager?.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil) ?? .zero
+    let w = Self.pillText(region).size().width + 8
+    return NSRect(x: textContainerOrigin.x + used.maxX + 6, y: textContainerOrigin.y + used.minY + 1, width: w, height: max(used.height - 2, 4))
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    let p = convert(event.locationInWindow, from: nil)
+    if let lm = layoutManager, let tc = textContainer, !folded.isEmpty, !lines.isEmpty {
+      let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: p.y - textContainerOrigin.y), in: tc)
+      let i = lineIndex(at: lm.characterIndexForGlyph(at: glyph))
+      if folded.contains(i), let region = regionByStart[i], pillRect(region, glyph: glyph).contains(p) {
+        toggleFold(i)
+        return
+      }
+    }
+    super.mouseDown(with: event)
   }
 
   // MARK: Notas
@@ -517,6 +702,7 @@ final class CodeNSTextView: NSTextView {
 
   func reveal(line: Int) {
     guard lines.indices.contains(line), lineStarts.indices.contains(line) else { return }
+    unfold(line: line)
     let start = lineStarts[line]
     let length = (lines[line].text as NSString).length
     let range = NSRange(location: start, length: length)
@@ -554,7 +740,7 @@ final class CodeGutterView: NSRulerView {
 
   override func mouseDown(with event: NSEvent) {
     guard let tv = codeView else { return }
-    tv.gutterClick(y: tv.convert(event.locationInWindow, from: nil).y)
+    tv.gutterClick(x: convert(event.locationInWindow, from: nil).x, y: tv.convert(event.locationInWindow, from: nil).y)
   }
 }
 
@@ -659,5 +845,25 @@ final class ScrollSync {
       other.contentView.scroll(to: origin)
       other.reflectScrolledClipView(other.contentView)
     }
+  }
+}
+
+extension CodeNSTextView: NSLayoutManagerDelegate {
+  /// Los caracteres plegados no generan glifos: el texto sigue en el almacén pero no ocupa espacio.
+  func layoutManager(
+    _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+    properties props: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes charIndexes: UnsafePointer<Int>,
+    font aFont: NSFont, forGlyphRange glyphRange: NSRange
+  ) -> Int {
+    guard !hiddenRanges.isEmpty else { return 0 }
+    var changed = false
+    var out = Array(UnsafeBufferPointer(start: props, count: glyphRange.length))
+    for i in 0..<glyphRange.length where isHidden(charIndexes[i]) {
+      out[i] = .null
+      changed = true
+    }
+    guard changed else { return 0 }
+    layoutManager.setGlyphs(glyphs, properties: out, characterIndexes: charIndexes, font: aFont, forGlyphRange: glyphRange)
+    return glyphRange.length
   }
 }
