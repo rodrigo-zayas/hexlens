@@ -1,0 +1,29 @@
+Sources/HexLensCore/CodeDocument.swift
+  s_55f2f793c43a6d::t_d1315f309c684b 146-154
+Tests/HexLensCoreTests/RubyTests.swift
+  s_4727cc1cd4df26::t_ea4b280a66d22f 290-314
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ce82862bda9b43ad10321d839351a1b18a94b18",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    },
+    "s_55f2f793c43a6d": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "1e8a921f-6cbd-4a63-9535-1013d865e58d",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
