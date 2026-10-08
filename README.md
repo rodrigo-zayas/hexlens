@@ -34,7 +34,7 @@ Las dos están firmadas con Developer ID y notarizadas por Apple: se descomprime
 ./scripts/make-icon.sh            # regenera Resources/AppIcon.icns desde docs/logo.svg
 ```
 
-En la app: `⌘O` abre un repo, `⌘P` elige PR (pedidas a mí, abiertas, mías, por número o comparando dos refs). Navegación: `⌘]` / `⌘[` siguiente o anterior en el orden de lectura, `⌘⇧]` siguiente sin revisar, `⌘D` marcar revisado.
+En la app: `⌥⌘O` abre un repo, `⌘O` va a una clase y `⌘⇧O` a un fichero (búsqueda difusa, también por iniciales CamelCase), `⌘P` elige PR (pedidas a mí, abiertas, mías, por número o comparando dos refs). Navegación: `⌘]` / `⌘[` siguiente o anterior en el orden de lectura, `⌘⇧]` siguiente sin revisar, `⌘D` marcar revisado.
 
 Desde terminal:
 

@@ -61,6 +61,21 @@ public struct CodeLocation: Hashable {
   public var line: Int?
 }
 
+enum QuickOpenMode: Identifiable {
+  case file, type
+  var id: Int { self == .file ? 0 : 1 }
+}
+
+struct QuickOpenEntry: Identifiable {
+  let name: String
+  let detail: String
+  let layer: String
+  let changed: Bool
+  let path: String
+  let line: Int?
+  var id: String { "\(path)#\(line ?? 0)#\(name)" }
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
   @Published public private(set) var repo: GitRepo?
@@ -77,6 +92,7 @@ public final class AppModel: ObservableObject {
   @Published public private(set) var busy: String?
   @Published public var errorMessage: String?
   @Published public var showPRPicker = false
+  @Published var quickOpen: QuickOpenMode?
   @Published public var showTests = false { didSet { relayout() } }
   @Published public var contextMode: ContextMode = .none { didSet { relayout() } }
   @Published public var strategy: ReadingStrategy = .insideOut { didSet { recomputeOrder() } }
@@ -295,6 +311,43 @@ public final class AppModel: ObservableObject {
 
   private func recomputeOrder() {
     order = graph?.readingOrder(strategy) ?? []
+  }
+
+  // MARK: - Ir a fichero / clase
+
+  /// Candidatos de ⌘⇧O (ficheros) o ⌘O (tipos declarados) entre los ficheros cargados de la sesión.
+  func quickOpenEntries(_ mode: QuickOpenMode) -> [QuickOpenEntry] {
+    guard let s = session else { return [] }
+    var out: [QuickOpenEntry] = []
+    for u in s.graph.units where u.status != .deleted {
+      let changed = !u.isGhost
+      switch mode {
+      case .file:
+        out.append(QuickOpenEntry(
+          name: u.fileName, detail: u.path, layer: u.layer.title, changed: changed, path: u.path, line: nil))
+      case .type:
+        guard u.isCode else { continue }
+        let entries = u.path.hasSuffix(".java")
+          ? s.store.text(u.path, at: s.headSHA).map(Outline.java)?.filter { $0.kind == .type } ?? []
+          : []
+        if entries.isEmpty {
+          out.append(QuickOpenEntry(
+            name: u.typeName, detail: u.packageName.isEmpty ? u.path : u.packageName, layer: u.layer.title,
+            changed: changed, path: u.path, line: nil))
+        }
+        for e in entries {
+          out.append(QuickOpenEntry(
+            name: e.name, detail: u.packageName.isEmpty ? u.path : u.packageName, layer: u.layer.title,
+            changed: changed, path: u.path, line: e.line))
+        }
+      }
+    }
+    return out
+  }
+
+  func openQuickOpen(_ entry: QuickOpenEntry) {
+    quickOpen = nil
+    go(to: CodeLocation(path: entry.path, line: entry.line))
   }
 
   // MARK: - Navegación
