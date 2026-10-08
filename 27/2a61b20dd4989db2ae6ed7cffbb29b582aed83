@@ -1,0 +1,21 @@
+Sources/HexLensUI/AppModel.swift
+  s_0fdcf30da7c188::t_1f80f915414033 114
+Sources/HexLensUI/FlowsView.swift
+  s_0fdcf30da7c188::t_e30b47db5a96c3 4,9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "272a61b20dd4989db2ae6ed7cffbb29b582aed83",
+  "prompts": {},
+  "sessions": {
+    "s_0fdcf30da7c188": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "970c21c0-b33b-4715-972b-cca04f3021e8",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
