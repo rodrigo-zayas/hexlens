@@ -17,7 +17,12 @@ struct DetailView: View {
         switch tab {
         case .code:
           if let content = model.content(for: location.path) {
-            CodeTextView(content: content, scroll: model.scrollRequest) { model.follow($0) }
+            if model.findVisible { FindBar() }
+            let matches = model.findMatches
+            CodeTextView(
+              content: content, scroll: model.scrollRequest, matches: matches,
+              currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1)
+            ) { model.follow($0) }
           } else {
             ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
           }
@@ -217,5 +222,47 @@ struct RelationsView: View {
         }
       }
     }
+  }
+}
+
+/// Barra de búsqueda del visor (⌘F).
+struct FindBar: View {
+  @EnvironmentObject var model: AppModel
+  @FocusState private var focused: Bool
+
+  var body: some View {
+    let count = model.findMatches.count
+    HStack(spacing: 6) {
+      Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+      TextField("Buscar", text: $model.findQuery)
+        .textFieldStyle(.plain)
+        .focused($focused)
+        .onSubmit { NSEvent.modifierFlags.contains(.shift) ? model.findPrevious() : model.findNext() }
+        .onKeyPress(.escape) { model.closeFind(); return .handled }
+        .frame(minWidth: 120)
+      Text(model.findQuery.isEmpty ? "" : count == 0 ? "Sin resultados" : "\(min(model.findIndex, count - 1) + 1) de \(count)")
+        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+      toggle("Aa", $model.findCaseSensitive, help: "Distinguir mayúsculas")
+      toggle("W", $model.findWholeWord, help: "Palabra completa")
+      Button { model.findPrevious() } label: { Image(systemName: "chevron.up") }
+        .help("Anterior (⌘⇧G)").disabled(count == 0)
+      Button { model.findNext() } label: { Image(systemName: "chevron.down") }
+        .help("Siguiente (⌘G)").disabled(count == 0)
+      Button { model.closeFind() } label: { Image(systemName: "xmark") }.help("Cerrar (Esc)")
+    }
+    .buttonStyle(.borderless)
+    .padding(.horizontal, 10).padding(.vertical, 5)
+    .background(.bar)
+    .onAppear { focused = true }
+    .onChange(of: model.findFocusSerial) { _, _ in focused = true }
+    .onChange(of: model.findQuery) { _, _ in model.findIndex = 0 }
+    .onChange(of: model.findCaseSensitive) { _, _ in model.findIndex = 0 }
+    .onChange(of: model.findWholeWord) { _, _ in model.findIndex = 0 }
+    Divider()
+  }
+
+  private func toggle(_ title: String, _ value: Binding<Bool>, help: String) -> some View {
+    Toggle(isOn: value) { Text(title).font(.system(size: 11, weight: .medium, design: .monospaced)) }
+      .toggleStyle(.button).controlSize(.small).help(help)
   }
 }

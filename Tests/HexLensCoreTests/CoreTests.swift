@@ -137,4 +137,15 @@ final class ReadingOrderTests: XCTestCase {
       XCTAssertEqual(order.count, Set(order).count, "\(s)")
     }
   }
+
+  func testTextSearch() {
+    let t = "id idValue userId ID"
+    XCTAssertEqual(TextSearch.matches(of: "id", in: t, caseSensitive: false, wholeWord: false).count, 4)
+    XCTAssertEqual(TextSearch.matches(of: "id", in: t, caseSensitive: true, wholeWord: false).count, 2)
+    XCTAssertEqual(TextSearch.matches(of: "id", in: t, caseSensitive: false, wholeWord: true), [NSRange(location: 0, length: 2), NSRange(location: 18, length: 2)])
+    XCTAssertEqual(TextSearch.matches(of: "a.b(", in: "x a.b(1) axb(", caseSensitive: true, wholeWord: false), [NSRange(location: 2, length: 4)])
+    XCTAssertTrue(TextSearch.matches(of: "", in: t, caseSensitive: false, wholeWord: false).isEmpty)
+    // El emoji ocupa 2 unidades UTF-16.
+    XCTAssertEqual(TextSearch.matches(of: "ñu", in: "😀 ñu", caseSensitive: true, wholeWord: false), [NSRange(location: 3, length: 2)])
+  }
 }

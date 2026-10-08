@@ -5,7 +5,7 @@ import SwiftUI
 /// Colores de IntelliJ (Light y New UI Dark).
 struct CodeTheme {
   let background, gutter, gutterText, text, keyword, string, number, comment, annotation, field, method: NSColor
-  let added, removed, separator, addedBar, removedBar, guide: NSColor
+  let added, removed, separator, addedBar, removedBar, guide, findMatch, findCurrent: NSColor
 
   static func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
     NSColor(
@@ -18,14 +18,16 @@ struct CodeTheme {
     keyword: color(0x0033B3), string: color(0x067D17), number: color(0x1750EB), comment: color(0x8C8C8C),
     annotation: color(0x9E880D), field: color(0x871094), method: color(0x00627A),
     added: color(0xE5F4E5), removed: color(0xFBE4E4), separator: color(0xEEF2FB),
-    addedBar: color(0x6CC56C), removedBar: color(0xE07070), guide: color(0xE4E6EB))
+    addedBar: color(0x6CC56C), removedBar: color(0xE07070), guide: color(0xE4E6EB),
+    findMatch: color(0xFFE48C, 0.6), findCurrent: color(0xF2C55C))
 
   static let dark = CodeTheme(
     background: color(0x1E1F22), gutter: color(0x1E1F22), gutterText: color(0x4B5059), text: color(0xBCBEC4),
     keyword: color(0xCF8E6D), string: color(0x6AAB73), number: color(0x2AACB8), comment: color(0x7A7E85),
     annotation: color(0xB3AE60), field: color(0xC77DBB), method: color(0x56A8F5),
     added: color(0x253A2B), removed: color(0x3F2A2C), separator: color(0x25272C),
-    addedBar: color(0x549159), removedBar: color(0xBD5757), guide: color(0x34363B))
+    addedBar: color(0x549159), removedBar: color(0xBD5757), guide: color(0x34363B),
+    findMatch: color(0x5F5338), findCurrent: color(0x8A6E2F))
 
   /// JetBrains Mono: la del IntelliJ instalado si no está en el sistema.
   static let font: NSFont = {
@@ -67,6 +69,8 @@ struct ScrollRequest: Equatable {
 struct CodeTextView: NSViewRepresentable {
   let content: CodeContent
   let scroll: ScrollRequest?
+  let matches: [NSRange]
+  let currentMatch: Int?
   let onLink: (CodeLink) -> Void
   @Environment(\.colorScheme) private var scheme
 
@@ -84,8 +88,6 @@ struct CodeTextView: NSViewRepresentable {
     textView.isSelectable = true
     textView.isRichText = true
     textView.allowsUndo = false
-    textView.usesFindBar = true
-    textView.isIncrementalSearchingEnabled = true
     textView.textContainerInset = NSSize(width: CodeNSTextView.gutterWidth + 8, height: 6)
     textView.isHorizontallyResizable = true
     textView.isVerticallyResizable = true
@@ -104,13 +106,36 @@ struct CodeTextView: NSViewRepresentable {
     return scrollView
   }
 
+  private func applyHighlights(_ textView: CodeNSTextView, theme: CodeTheme, coordinator c: Coordinator, textChanged: Bool) {
+    guard let lm = textView.layoutManager else { return }
+    let length = (textView.string as NSString).length
+    let valid = matches.filter { NSMaxRange($0) <= length }
+    let current = currentMatch.flatMap { valid.indices.contains($0) ? $0 : nil }
+    let state = Coordinator.Highlight(matches: valid, current: current, dark: scheme == .dark)
+    guard textChanged || state != c.highlight else { return }
+    let previous = c.highlight
+    c.highlight = state
+    lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: length))
+    for (i, r) in valid.enumerated() {
+      lm.addTemporaryAttribute(.backgroundColor, value: i == current ? theme.findCurrent : theme.findMatch, forCharacterRange: r)
+    }
+    if let current, textChanged || current != previous.current || valid != previous.matches {
+      let r = valid[current]
+      DispatchQueue.main.async {
+        textView.scrollRangeToVisible(r)
+        textView.showFindIndicator(for: r)
+      }
+    }
+  }
+
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     guard let textView = scrollView.documentView as? CodeNSTextView else { return }
     let theme = scheme == .dark ? CodeTheme.dark : CodeTheme.light
     let c = context.coordinator
     c.onLink = onLink
     let key = "\(content.id)|\(scheme)"
-    if c.key != key {
+    let textChanged = c.key != key
+    if textChanged {
       c.key = key
       c.links = content.links.map(\.1)
       textView.lines = content.document.lines
@@ -123,6 +148,7 @@ struct CodeTextView: NSViewRepresentable {
       textView.textStorage?.setAttributedString(Self.attributed(content, theme: theme))
       textView.scroll(.zero)
     }
+    applyHighlights(textView, theme: theme, coordinator: c, textChanged: textChanged)
     if let scroll, scroll != c.lastScroll, scroll.line < content.document.lineStarts.count {
       c.lastScroll = scroll
       DispatchQueue.main.async { textView.reveal(line: scroll.line, document: content.document) }
@@ -177,6 +203,12 @@ struct CodeTextView: NSViewRepresentable {
     var key = ""
     var links: [CodeLink] = []
     var lastScroll: ScrollRequest?
+    struct Highlight: Equatable {
+      var matches: [NSRange] = []
+      var current: Int?
+      var dark = false
+    }
+    var highlight = Highlight()
     var onLink: (CodeLink) -> Void = { _ in }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {

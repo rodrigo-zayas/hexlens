@@ -120,6 +120,31 @@ public final class AppModel: ObservableObject {
   @Published public var fullFile = true
   @Published private(set) var scrollRequest: ScrollRequest?
   private var scrollSerial = 0
+
+  // Búsqueda en el visor (⌘F)
+  @Published var findVisible = false
+  @Published var findQuery = ""
+  @Published var findCaseSensitive = false
+  @Published var findWholeWord = false
+  @Published var findIndex = 0
+  @Published private(set) var findFocusSerial = 0
+
+  var findMatches: [NSRange] {
+    guard findVisible, let path = location?.path, let c = content(for: path) else { return [] }
+    return TextSearch.matches(of: findQuery, in: c.document.text, caseSensitive: findCaseSensitive, wholeWord: findWholeWord)
+  }
+
+  func showFind() { findVisible = true; findFocusSerial += 1 }
+  func closeFind() { findVisible = false }
+  func findNext() { stepFind(1) }
+  func findPrevious() { stepFind(-1) }
+
+  private func stepFind(_ d: Int) {
+    guard findVisible else { return showFind() }
+    let n = findMatches.count
+    guard n > 0 else { return }
+    findIndex = ((findIndex + d) % n + n) % n
+  }
   private var contentCache: [String: CodeContent] = [:]
 
   // Flujos
