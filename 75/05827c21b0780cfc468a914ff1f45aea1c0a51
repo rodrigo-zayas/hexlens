@@ -1,0 +1,33 @@
+README.md
+  s_4a90adf90c28f9::t_5907cf9f5ac6ed 13
+Sources/HexLensCore/CodeDocument.swift
+  s_4a90adf90c28f9::t_1eb4bc206c2587 4,42-43
+Sources/HexLensCore/SideBySide.swift
+  s_4a90adf90c28f9::t_b49ff7b31bfe48 1-47
+Sources/HexLensUI/AppModel.swift
+  s_4a90adf90c28f9::t_96f550995d5cf2 100-103,144,389-395,397,405,407-411,424-432,447-451
+Sources/HexLensUI/CodeView.swift
+  s_4a90adf90c28f9::t_4b51d62f398938 91-94,124-127,251,255,280,383,479,606-634
+Sources/HexLensUI/DetailView.swift
+  s_4a90adf90c28f9::t_a61a1bf82cc8c6 8,24,47-70,140-147
+Sources/HexLensUI/RootView.swift
+  s_4a90adf90c28f9::t_54a771307a12a6 224-225
+Tests/HexLensCoreTests/SideBySideTests.swift
+  s_4a90adf90c28f9::t_b91ae8cca42f92 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7505827c21b0780cfc468a914ff1f45aea1c0a51",
+  "prompts": {},
+  "sessions": {
+    "s_4a90adf90c28f9": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "52abaf7d-618f-40f2-9f06-cba68a45f4f2",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
