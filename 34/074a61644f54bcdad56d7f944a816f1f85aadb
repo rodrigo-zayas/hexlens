@@ -1,0 +1,25 @@
+Sources/HexLensCore/MarkdownBlocks.swift
+  s_25952ffa7ca874::t_f83593aba8fe9d 27-34,36,39-41,112,221-260
+Sources/HexLensUI/DetailView.swift
+  s_25952ffa7ca874::t_6b20f0b34bba10 66,68-71
+Sources/HexLensUI/MarkdownPreview.swift
+  s_25952ffa7ca874::t_958ba6323c5a46 9,11-12,24,39-46,56-110
+Tests/HexLensCoreTests/MarkdownBlocksTests.swift
+  s_25952ffa7ca874::t_048e0b277998d9 36-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34074a61644f54bcdad56d7f944a816f1f85aadb",
+  "prompts": {},
+  "sessions": {
+    "s_25952ffa7ca874": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "b38c405d-bd63-4a7a-8a72-2463ff4c8d06",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
