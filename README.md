@@ -53,6 +53,20 @@ dist/hexlens snapshot --repo <repo> --pr 46870 --out grafo.png [--context key|al
 
 Necesita `git` y `gh` con sesión iniciada. Las PRs se traen a `refs/hexlens/*` sin tocar tus ramas. Las PRs apiladas usan su base real, la rama de la PR anterior.
 
+## Notas en Claude (MCP)
+
+`hexlens mcp` es un servidor MCP por stdio con las notas de revisión (`list_review_notes`, `mark_notes_sent`), para que Claude las lea sin pegar el prompt. `build-app.sh` deja el binario en `dist/hexlens`:
+
+```bash
+claude mcp add hexlens -- /ruta/a/hexlens mcp
+```
+
+Claude Desktop, en `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "hexlens": { "command": "/ruta/a/hexlens", "args": ["mcp"] } } }
+```
+
 ## Cómo funciona
 
 | Pieza | Fichero |
