@@ -1,0 +1,25 @@
+README.md
+  s_6d4034ceda5586::t_f5a2a2d331e2cd 56-69
+Sources/HexLensCore/MCPServer.swift
+  s_6d4034ceda5586::t_db40e0d6a35f69 1-172
+Sources/hexlens-cli/main.swift
+  s_6d4034ceda5586::t_4bf3fad52d6a02 7,18-22
+Tests/HexLensCoreTests/MCPServerTests.swift
+  s_6d4034ceda5586::t_18c345423636d6 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d98f03309509822a45aff6266d1587537b04df72",
+  "prompts": {},
+  "sessions": {
+    "s_6d4034ceda5586": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "4e02c403-0b3b-476f-b4a0-72ad6ff65de4",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
