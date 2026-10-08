@@ -1,27 +1,33 @@
 import HexLensCore
 import SwiftUI
 
-extension Layer {
-  public var color: Color {
-    switch self {
-    case .inbound: Color(red: 0.20, green: 0.48, blue: 0.92)
-    case .application: Color(red: 0.16, green: 0.62, blue: 0.40)
-    case .domain: Color(red: 0.86, green: 0.52, blue: 0.10)
-    case .outbound: Color(red: 0.55, green: 0.33, blue: 0.85)
-    case .config: Color(red: 0.45, green: 0.47, blue: 0.50)
-    case .other: Color(red: 0.55, green: 0.45, blue: 0.38)
-    }
-  }
+/// Espaciado base y tipografía compartidos: tres tamaños y una escala 4/8/12.
+enum Metrics {
+  static let xs: CGFloat = 4
+  static let s: CGFloat = 8
+  static let m: CGFloat = 12
+}
+
+enum Typo {
+  static let title = Font.system(size: 13, weight: .semibold)
+  static let body = Font.system(size: 12)
+  static let secondary = Font.system(size: 11)
+  static let code = Font.system(size: 12, design: .monospaced)
+}
+
+/// Color solo con significado: añadido/quitado y errores. El resto, colores del sistema.
+enum Semantic {
+  static let added = Color.green
+  static let removed = Color.red
+  static let error = Color.red
 }
 
 extension ChangeStatus {
   public var color: Color {
     switch self {
-    case .added: .green
-    case .modified: .orange
-    case .deleted: .red
-    case .renamed: .blue
-    case .unchanged: .gray
+    case .added: Semantic.added
+    case .deleted: Semantic.removed
+    case .modified, .renamed, .unchanged: .secondary
     }
   }
 }
@@ -29,9 +35,9 @@ extension ChangeStatus {
 extension MemberChange.Change {
   var color: Color {
     switch self {
-    case .added: .green
-    case .removed: .red
-    case .modified: .orange
+    case .added: Semantic.added
+    case .removed: Semantic.removed
+    case .modified: .secondary
     }
   }
 
@@ -44,21 +50,29 @@ extension MemberChange.Change {
   }
 }
 
-struct Pill: View {
+/// Estado en texto secundario con símbolo opcional; solo se tiñe si es un error.
+struct Tag: View {
   let text: String
-  var color: Color = .secondary
   var symbol: String?
+  var isError = false
 
   var body: some View {
     HStack(spacing: 3) {
       if let symbol { Image(systemName: symbol) }
       Text(text)
     }
-    .font(.system(size: 11, weight: .medium))
-    .padding(.horizontal, 6)
-    .padding(.vertical, 2)
-    .background(color.opacity(0.14), in: Capsule())
-    .foregroundStyle(color)
+    .font(Typo.secondary)
+    .foregroundStyle(isError ? Semantic.error : .secondary)
+  }
+}
+
+/// Cabecera de sección al estilo IDE: pequeña y secundaria.
+struct SectionTitle: View {
+  let text: String
+  init(_ text: String) { self.text = text }
+
+  var body: some View {
+    Text(text).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
   }
 }
 

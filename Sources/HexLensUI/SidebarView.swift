@@ -9,7 +9,6 @@ struct SidebarView: View {
   private struct Section_: Identifiable {
     let id: String
     let title: String
-    let color: Color
     var items: [String]
   }
 
@@ -19,20 +18,20 @@ struct SidebarView: View {
     for id in model.order {
       guard let u = g.unit(id) else { continue }
       // Los tests van con su clase; los huérfanos y lo que no es código, aparte.
-      let key: String, title: String, color: Color
+      let key: String, title: String
       if let subject = g.subjectByTest[id], let s = g.unit(subject) {
-        key = s.layer.rawValue; title = s.layer.title; color = s.layer.color
+        key = s.layer.rawValue; title = s.layer.title
       } else if u.isTest {
-        key = "tests"; title = "Tests y fixtures"; color = .green
+        key = "tests"; title = "Tests y fixtures"
       } else if !u.isCode {
-        key = "files"; title = "Otros ficheros"; color = .gray
+        key = "files"; title = "Otros ficheros"
       } else {
-        key = u.layer.rawValue; title = u.layer.title; color = u.layer.color
+        key = u.layer.rawValue; title = u.layer.title
       }
       if result.last?.id == key {
         result[result.count - 1].items.append(id)
       } else {
-        result.append(Section_(id: key + "\(result.count)", title: title, color: color, items: [id]))
+        result.append(Section_(id: key + "\(result.count)", title: title, items: [id]))
       }
     }
     return result
@@ -44,10 +43,9 @@ struct SidebarView: View {
       if id != model.selectedID { DispatchQueue.main.async { model.select(id) } }
     })) {
       if let s = model.session {
-        VStack(alignment: .leading, spacing: 6) {
-          Text(s.title).font(.headline).lineLimit(3)
-          ProgressView(value: Double(model.reviewedCount), total: Double(max(model.changedCount, 1)))
-          Text("\(model.reviewedCount) de \(model.changedCount) revisados").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Metrics.xs) {
+          Text(s.title).font(Typo.title).lineLimit(3)
+          Text("\(model.reviewedCount) de \(model.changedCount) revisados").font(Typo.secondary).foregroundStyle(.secondary)
           Picker("Orden", selection: $model.strategy) {
             ForEach(ReadingStrategy.allCases) { Text($0.title).tag($0) }
           }
@@ -73,10 +71,7 @@ struct SidebarView: View {
               }
             }
           } header: {
-            HStack(spacing: 5) {
-              Circle().fill(section.color).frame(width: 7, height: 7)
-              Text(section.title)
-            }
+            SectionTitle(section.title)
           }
         }
       }
@@ -97,7 +92,7 @@ private struct FileRow: View {
     HStack(spacing: 6) {
       Button(action: toggle) {
         Image(systemName: reviewed ? "checkmark.circle.fill" : "circle")
-          .foregroundStyle(reviewed ? .green : .secondary)
+          .foregroundStyle(.secondary)
       }
       .buttonStyle(.plain)
       .help("Marcar revisado")
@@ -107,9 +102,6 @@ private struct FileRow: View {
       Text(unit.status.letter)
         .font(.system(size: 10, weight: .bold, design: .monospaced))
         .foregroundStyle(unit.status.color)
-      Image(systemName: unit.isTest ? "testtube.2" : unit.role.symbol)
-        .font(.system(size: 11))
-        .foregroundStyle(unit.isTest ? .green : unit.layer.color)
       VStack(alignment: .leading, spacing: 0) {
         Text(unit.isCode ? unit.typeName : unit.fileName)
           .lineLimit(1).truncationMode(.middle)
@@ -119,8 +111,8 @@ private struct FileRow: View {
           .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
       }
       Spacer(minLength: 0)
-      if violations > 0 { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.system(size: 10)) }
-      Text("+\(unit.additions)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.green)
+      if violations > 0 { Image(systemName: "exclamationmark.triangle").foregroundStyle(Semantic.error).font(.system(size: 10)) }
+      Text("+\(unit.additions)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
     }
   }
 }
@@ -129,7 +121,7 @@ private struct FileRow: View {
 /// Notas de la PR: fichero:líneas y primera línea del texto; clic salta al código.
 private struct NotesSection: View {
   @EnvironmentObject var model: AppModel
-  @State private var expanded = true
+  @AppStorage("notesExpanded") private var expanded = false
 
   var body: some View {
     DisclosureGroup(isExpanded: $expanded) {
@@ -142,8 +134,8 @@ private struct NotesSection: View {
             HStack(spacing: 4) {
               Text("\((n.path as NSString).lastPathComponent):\(n.startLine == n.endLine ? "\(n.startLine)" : "\(n.startLine)-\(n.endLine)")")
                 .font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
-              if n.outdated { Pill(text: "desactualizada", color: .gray) }
-              if n.sentAt != nil { Pill(text: "enviada", color: .secondary) }
+              if n.outdated { Tag(text: "desactualizada") }
+              if n.sentAt != nil { Image(systemName: "paperplane").font(.system(size: 9)).foregroundStyle(.secondary).help("Enviada") }
             }
             Text(n.body.split(separator: "\n").first.map(String.init) ?? "")
               .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
@@ -165,7 +157,7 @@ private struct NotesSection: View {
         .help("Envía la selección (⌘clic) o, si no hay, las no enviadas · ⌥⌘↩")
       }
     } label: {
-      Label("Notas (\(model.notes.count))", systemImage: "note.text").font(.subheadline.weight(.semibold))
+      SectionTitle("Notas (\(model.notes.count))")
     }
   }
 }

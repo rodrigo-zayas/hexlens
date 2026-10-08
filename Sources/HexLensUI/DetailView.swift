@@ -59,8 +59,8 @@ struct DetailView: View {
     let inPR = unit.map { !$0.isGhost } ?? false
     let name = unit?.typeName ?? session.store.parsed(path, at: session.headSHA)?.facts.primary?.name ?? (path as NSString).lastPathComponent
 
-    return VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 6) {
+    return VStack(alignment: .leading, spacing: Metrics.s) {
+      HStack(spacing: Metrics.s) {
         Button { model.back() } label: { Image(systemName: "chevron.left") }
           .disabled(model.backStack.isEmpty).help("Atrás (⌘⌥←)")
         Button { model.forward() } label: { Image(systemName: "chevron.right") }
@@ -68,70 +68,52 @@ struct DetailView: View {
         HStack(spacing: 4) {
           Text(info.0)
           Image(systemName: "chevron.right").font(.system(size: 8))
-          Text(info.1.title).foregroundStyle(info.1.color)
+          Text(info.1.title)
           if !info.3.isEmpty {
             Image(systemName: "chevron.right").font(.system(size: 8))
             Text(info.3)
           }
         }
-        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+        .font(Typo.secondary).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
         Spacer()
       }
       .buttonStyle(.borderless)
 
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Image(systemName: info.2.symbol).foregroundStyle(info.1.color)
-        Text(name).font(.title3.weight(.semibold)).textSelection(.enabled).lineLimit(1)
-        Pill(text: info.2.label, color: info.1.color)
+      HStack(alignment: .firstTextBaseline, spacing: Metrics.s) {
+        Text(name).font(.system(size: 15, weight: .semibold)).textSelection(.enabled).lineLimit(1)
+        Text(info.2.label).font(Typo.secondary).foregroundStyle(.secondary)
         if let unit, inPR {
-          Pill(text: unit.status.label, color: unit.status.color)
-          Text("+\(unit.additions) −\(unit.deletions)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+          Text(unit.status.label).font(Typo.secondary).foregroundStyle(unit.status.color)
+          Text("+\(unit.additions) −\(unit.deletions)").font(Typo.secondary.monospacedDigit()).foregroundStyle(.secondary)
         } else {
-          Pill(text: "fuera de la PR", color: .gray)
+          Text("fuera de la PR").font(Typo.secondary).foregroundStyle(.secondary)
         }
         Spacer()
       }
 
-      if let unit, inPR, !unit.members.isEmpty || !session.graph.violations(of: unit.id).isEmpty {
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 5) {
-            ForEach(session.graph.violations(of: unit.id)) { v in
-              Pill(text: v.message, color: v.severity == .error ? .red : .orange, symbol: "exclamationmark.triangle.fill")
-                .help(v.imported)
-            }
-            ForEach(unit.members, id: \.self) { m in
-              Button {
-                model.go(to: CodeLocation(path: unit.path, line: session.store.parsed(unit.path, at: session.headSHA)?.member(named: m.name)?.startLine))
-              } label: {
-                Text("\(m.change.sign) \(m.name)")
-                  .font(.system(size: 11, design: .monospaced))
-                  .padding(.horizontal, 6).padding(.vertical, 2)
-                  .background(m.change.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 4))
-                  .foregroundStyle(m.change.color)
-              }
-              .buttonStyle(.plain)
-              .help(m.signature)
-              .disabled(m.change == .removed)
-            }
-          }
+      if let unit, inPR {
+        ForEach(session.graph.violations(of: unit.id)) { v in
+          Tag(text: v.message, symbol: "exclamationmark.triangle", isError: v.severity == .error)
+            .help(v.imported)
         }
+        if !unit.members.isEmpty { MembersDisclosure(unit: unit, session: session) }
       }
 
       let impls = model.implementations(of: path)
       if !impls.isEmpty {
-        HStack(spacing: 5) {
-          Text("Implementado por").font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: Metrics.s) {
+          SectionTitle("Implementado por")
           ForEach(impls, id: \.self) { impl in
             Button { model.goToImplementation(impl) } label: {
-              Pill(text: ((impl as NSString).lastPathComponent as NSString).deletingPathExtension, color: .purple, symbol: "arrow.down.right")
+              Text(((impl as NSString).lastPathComponent as NSString).deletingPathExtension).font(Typo.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.link)
             .help(impl)
           }
         }
       }
 
-      HStack(spacing: 8) {
+      HStack(spacing: Metrics.s) {
         Picker("", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
           .pickerStyle(.segmented).labelsHidden().fixedSize()
         if tab == .code {
@@ -149,12 +131,11 @@ struct DetailView: View {
             model.toggleReviewed(path)
           } label: {
             Label("Revisado", systemImage: model.reviewed.contains(path) ? "checkmark.circle.fill" : "circle")
+              .labelStyle(.titleAndIcon)
           }
-          .tint(model.reviewed.contains(path) ? .green : nil)
         }
-        Button { model.explainFile(path) } label: { Label("Explicar", systemImage: "sparkles") }
-          .help("Abre Claude en Terminal con este fichero")
         Menu {
+          Button("Explicar con Claude") { model.explainFile(path) }
           Button("Abrir en el editor") { model.openInEditor(path) }
           Button("Copiar ruta") {
             NSPasteboard.general.clearContents()
@@ -165,8 +146,36 @@ struct DetailView: View {
       }
       .controlSize(.small)
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 10)
+    .padding(.horizontal, Metrics.m)
+    .padding(.vertical, Metrics.s)
+  }
+}
+
+/// Métodos tocados del fichero, colapsados por defecto.
+private struct MembersDisclosure: View {
+  @EnvironmentObject var model: AppModel
+  @AppStorage("membersExpanded") private var expanded = false
+  let unit: CodeUnit
+  let session: ReviewSession
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $expanded) {
+      FlowLayout(spacing: Metrics.s) {
+        ForEach(unit.members, id: \.self) { m in
+          Button {
+            model.go(to: CodeLocation(path: unit.path, line: session.store.parsed(unit.path, at: session.headSHA)?.member(named: m.name)?.startLine))
+          } label: {
+            Text("\(m.change.sign) \(m.name)").font(Typo.code).foregroundStyle(m.change.color)
+          }
+          .buttonStyle(.plain)
+          .help(m.signature)
+          .disabled(m.change == .removed)
+        }
+      }
+      .padding(.top, Metrics.xs)
+    } label: {
+      SectionTitle("Métodos tocados (\(unit.members.count))")
+    }
   }
 }
 
@@ -181,7 +190,7 @@ struct RelationsView: View {
     let uses = g.outgoing(u.id).filter { $0.kind != .tests }
     let usedBy = g.incoming(u.id).filter { $0.kind != .tests && g.unit($0.from)?.isTest == false }
     let tests = g.tests(of: u.id)
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Metrics.m) {
       if let subject = g.subjectByTest[u.id] { row("Prueba a", [subject], edges: nil) }
       row("Usa", uses.map(\.to), edges: uses)
       row("Lo usan", usedBy.map(\.from), edges: usedBy)
@@ -189,7 +198,7 @@ struct RelationsView: View {
 
       VStack(alignment: .leading, spacing: 4) {
         HStack {
-          Text("Fuera de la PR").font(.subheadline.weight(.semibold))
+          SectionTitle("Fuera de la PR")
           if let files = model.impact[u.id] {
             Text("\(files.count) ficheros nombran \(u.typeName)").foregroundStyle(.secondary).font(.caption)
           } else {
@@ -210,22 +219,20 @@ struct RelationsView: View {
   private func row(_ title: String, _ ids: [String], edges: [Dependency]?) -> some View {
     if !ids.isEmpty {
       VStack(alignment: .leading, spacing: 4) {
-        Text("\(title) (\(ids.count))").font(.subheadline.weight(.semibold))
+        SectionTitle("\(title) (\(ids.count))")
         FlowLayout {
           ForEach(ids, id: \.self) { id in
             if let other = model.graph?.unit(id) {
               let kind = edges?.first { $0.from == id || $0.to == id }?.kind
               Button { model.select(id) } label: {
                 HStack(spacing: 4) {
-                  Circle().fill(other.status.color).frame(width: 6, height: 6)
-                  Image(systemName: other.role.symbol).foregroundStyle(other.layer.color)
                   Text(other.typeName)
                   if kind == .implements { Text("implementa").foregroundStyle(.secondary) }
                   if kind == .extends { Text("extiende").foregroundStyle(.secondary) }
                 }
-                .font(.system(size: 11))
+                .font(Typo.secondary)
                 .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(other.layer.color.opacity(0.1), in: Capsule())
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
               }
               .buttonStyle(.plain)
               .help("\(other.layer.title) · \(other.role.label) · \(other.packageName)")

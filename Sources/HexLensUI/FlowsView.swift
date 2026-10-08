@@ -20,7 +20,7 @@ struct AutomaticFlowsView: View {
     if let flows = model.flows {
       let shown = model.flowsOnlyChanges ? flows.map { $0.pruned() } : flows
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: Metrics.m) {
           HStack {
             Text("Qué pasa cuando entra una petición o un evento, paso a paso. Pulsa un paso para ver su código.")
               .font(.callout).foregroundStyle(.secondary)
@@ -32,7 +32,7 @@ struct AutomaticFlowsView: View {
           }
           ForEach(shown) { flow in card(flow) }
         }
-        .padding(14)
+        .padding(Metrics.m)
       }
     } else {
       ProgressView("Siguiendo las llamadas…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,7 +42,6 @@ struct AutomaticFlowsView: View {
   private func card(_ flow: FlowNode) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 8) {
-        Image(systemName: flow.role.symbol).foregroundStyle(flow.layer.color)
         Button { open(flow) } label: {
           HStack(spacing: 0) {
             Text(flow.typeName).foregroundStyle(.secondary)
@@ -52,22 +51,22 @@ struct AutomaticFlowsView: View {
         }
         .buttonStyle(.plain)
         changeBadge(flow)
-        Text(flow.role.label).font(.caption).foregroundStyle(.secondary)
+        Text(flow.role.label).font(Typo.secondary).foregroundStyle(.secondary)
         Spacer()
-        Button { model.explainFlow(flow) } label: { Label("Explicar", systemImage: "sparkles") }
+        Button { model.explainFlow(flow) } label: { Text("Explicar") }
           .controlSize(.small)
           .help("Abre Claude en Terminal explicando este flujo")
       }
       .padding(.horizontal, 10).padding(.vertical, 8)
-      .background(flow.layer.color.opacity(0.08))
+      .background(Color.primary.opacity(0.04))
 
       ForEach(rows(flow), id: \.node.id) { row in
         stepRow(row.node, depth: row.depth)
       }
       .padding(.vertical, 1)
     }
-    .clipShape(RoundedRectangle(cornerRadius: 9))
-    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(flow.layer.color.opacity(0.3)))
+    .clipShape(RoundedRectangle(cornerRadius: 7))
+    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator))
   }
 
   private func rows(_ flow: FlowNode) -> [(node: FlowNode, depth: Int)] {
@@ -94,7 +93,6 @@ struct AutomaticFlowsView: View {
       } else {
         Text("→").foregroundStyle(.tertiary).frame(width: 12)
       }
-      Image(systemName: n.role.symbol).font(.system(size: 11)).foregroundStyle(n.layer.color).frame(width: 16)
       Button { open(n) } label: {
         HStack(spacing: 0) {
           Text(n.typeName).foregroundStyle(n.inPR ? .primary : .secondary)
@@ -104,7 +102,7 @@ struct AutomaticFlowsView: View {
         .lineLimit(1)
       }
       .buttonStyle(.plain)
-      if let note = n.note { Pill(text: note, color: .purple) }
+      if let note = n.note { Tag(text: note) }
       changeBadge(n)
       Text(n.role.label).font(.system(size: 10)).foregroundStyle(.tertiary)
       Spacer(minLength: 0)
@@ -118,9 +116,9 @@ struct AutomaticFlowsView: View {
   @ViewBuilder
   private func changeBadge(_ n: FlowNode) -> some View {
     switch n.change {
-    case .added: Pill(text: "nuevo", color: .green)
-    case .modified: Pill(text: "cambia", color: .orange)
-    case .removed: Pill(text: "quitado", color: .red)
+    case .added: Text("nuevo").font(Typo.secondary).foregroundStyle(Semantic.added)
+    case .modified: Text("cambia").font(Typo.secondary).foregroundStyle(.secondary)
+    case .removed: Text("quitado").font(Typo.secondary).foregroundStyle(Semantic.removed)
     case nil: if !n.inPR { Text("sin cambios").font(.system(size: 10)).italic().foregroundStyle(.tertiary) }
     }
   }

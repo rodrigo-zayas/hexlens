@@ -68,59 +68,58 @@ public struct RootView: View {
             Button(b) { model.open(pr, base: b) }
           }
         } label: {
-          Label("Base: \(model.baseOverride ?? pr.baseRefName)", systemImage: "arrow.triangle.branch")
+          Text("Base: \(model.baseOverride ?? pr.baseRefName)")
         }
         .help("Comparar la PR contra otra rama sin cambiarla en GitHub (útil en PRs apiladas)")
       }
     }
     ToolbarItemGroup(placement: .primaryAction) {
-      Picker("Contexto", selection: $model.contextMode) {
-        ForEach(ContextMode.allCases) { Text($0.title).tag($0) }
-      }
-      .help("Ficheros sin cambios que conectan piezas de la PR")
-      Toggle(isOn: $model.showTests) { Label("Tests", systemImage: "testtube.2") }
-        .help("Mostrar los tests como nodos")
       Button { model.step(-1) } label: { Label("Anterior", systemImage: "chevron.up") }
         .help("Anterior en el orden de lectura (⌘[)")
       Button { model.step(1) } label: { Label("Siguiente", systemImage: "chevron.down") }
         .help("Siguiente en el orden de lectura (⌘])")
       Button { model.toggleReviewed() } label: { Label("Revisado", systemImage: "checkmark.circle") }
         .help("Marcar revisado (⌘D)")
-      Button { model.toggleCodeOnly() } label: {
-        Label("Solo código", systemImage: model.columns == .detailOnly ? "rectangle.split.3x1" : "rectangle.righthalf.filled")
-      }
-      .help("Código a pantalla completa (⌘⇧C)")
-      Menu {
-        Picker("Apariencia", selection: $model.appearance) {
-          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-        }
-      } label: { Label("Apariencia", systemImage: "circle.lefthalf.filled") }
       Button { model.explainPR() } label: { Label("Explicar PR", systemImage: "sparkles") }
         .disabled(model.session == nil)
         .help("Abre Claude en Terminal con un resumen de qué hace la PR")
-      Button { model.reload() } label: { Label("Recargar", systemImage: "arrow.clockwise") }
-        .disabled(model.session == nil)
-      if model.currentPR?.url != nil {
-        Button { model.openOnGitHub() } label: { Label("GitHub", systemImage: "safari") }
-      }
+      Menu {
+        Picker("Contexto", selection: $model.contextMode) {
+          ForEach(ContextMode.allCases) { Text($0.title).tag($0) }
+        }
+        Toggle("Mostrar tests", isOn: $model.showTests)
+        Button(model.columns == .detailOnly ? "Mostrar paneles" : "Solo código") { model.toggleCodeOnly() }
+        Divider()
+        Picker("Apariencia", selection: $model.appearance) {
+          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+        }
+        Divider()
+        Button("Recargar") { model.reload() }.disabled(model.session == nil)
+        if model.currentPR?.url != nil {
+          Button("Abrir en GitHub") { model.openOnGitHub() }
+        }
+      } label: { Label("Más", systemImage: "ellipsis.circle") }
+        .help("Contexto, tests, solo código, apariencia, recargar y GitHub")
     }
   }
 }
 
-/// Centro: flujos (qué hace) o mapa (dónde está), con el resumen por capa encima.
+/// Centro: flujos (qué hace) o mapa (dónde está), con el resumen por capa colapsado encima.
 struct CenterPane: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack(spacing: 0) {
+      HStack(spacing: Metrics.m) {
         Picker("", selection: $model.centerMode) {
           ForEach(CenterMode.allCases) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented).labelsHidden().fixedSize()
-        .padding(.leading, 12)
         SummaryBar()
+        Spacer(minLength: 0)
       }
+      .padding(.horizontal, Metrics.m).padding(.vertical, Metrics.s)
+      SummaryDetails()
       Divider()
       switch model.centerMode {
       case .flows: FlowsView()
@@ -176,73 +175,81 @@ struct GraphPane: View {
   }
 }
 
-/// Macroestructura antes del detalle: cuánto toca cada capa y qué reglas rompe.
+/// Una línea: violaciones, avisos y punto de entrada sugerido.
 struct SummaryBar: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
     if let g = model.graph {
-      let changed = g.changed.filter { $0.isCode && !$0.isTest }
-      let byLayer = Dictionary(grouping: changed, by: \.layer)
       let errors = g.violations.filter { $0.severity == .error }
       let warnings = g.violations.filter { $0.severity == .warning }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 10) {
+      HStack(spacing: Metrics.m) {
+        if !errors.isEmpty { Tag(text: "\(errors.count) violaciones", symbol: "xmark.octagon", isError: true) }
+        if !warnings.isEmpty { Tag(text: "\(warnings.count) avisos", symbol: "exclamationmark.triangle") }
+        if let entry = g.entryPoint.flatMap(g.unit) {
+          Button { model.select(entry.id) } label: { Tag(text: "Empieza por \(entry.typeName)", symbol: "flag") }
+            .buttonStyle(.plain)
+            .help("Punto de entrada sugerido")
+        }
+      }
+    }
+  }
+}
+
+/// Resumen por capa y leyenda, colapsado por defecto.
+struct SummaryDetails: View {
+  @EnvironmentObject var model: AppModel
+  @AppStorage("summaryExpanded") private var expanded = false
+
+  var body: some View {
+    if let g = model.graph {
+      let changed = g.changed.filter { $0.isCode && !$0.isTest }
+      let byLayer = Dictionary(grouping: changed, by: \.layer)
+      DisclosureGroup(isExpanded: $expanded) {
+        VStack(alignment: .leading, spacing: Metrics.xs) {
           ForEach(Layer.allCases, id: \.self) { layer in
             if let us = byLayer[layer] {
               let roles = Dictionary(grouping: us, by: \.role).sorted { $0.key.rank < $1.key.rank }
-              VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                  Circle().fill(layer.color).frame(width: 8, height: 8)
-                  Text(layer.title).font(.system(size: 11, weight: .semibold))
-                  Text("\(us.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
-                }
+              HStack(spacing: Metrics.s) {
+                Text("\(layer.title) \(us.count)").font(Typo.secondary.weight(.medium))
                 Text(roles.map { "\($0.value.count) \($0.key.label)" }.joined(separator: " · "))
-                  .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                  .font(Typo.secondary).foregroundStyle(.secondary).lineLimit(1)
               }
-              .padding(.horizontal, 8).padding(.vertical, 5)
-              .background(layer.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
             }
           }
           let tests = g.changed.filter(\.isTest).count
-          if tests > 0 { Pill(text: "\(tests) tests", color: .green, symbol: "testtube.2") }
-          if !errors.isEmpty { Pill(text: "\(errors.count) violaciones", color: .red, symbol: "xmark.octagon.fill") }
-          if !warnings.isEmpty { Pill(text: "\(warnings.count) avisos", color: .orange, symbol: "exclamationmark.triangle.fill") }
-          if let entry = g.entryPoint.flatMap(g.unit) {
-            Button { model.select(entry.id) } label: {
-              Pill(text: "Empieza por \(entry.typeName)", color: .pink, symbol: "flag.fill")
-            }
-            .buttonStyle(.plain)
-          }
-          Legend()
+          if tests > 0 { Text("\(tests) tests").font(Typo.secondary).foregroundStyle(.secondary) }
+          Legend().padding(.top, Metrics.xs)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, Metrics.xs)
+      } label: {
+        SectionTitle("Resumen por capa y leyenda")
       }
+      .padding(.horizontal, Metrics.m).padding(.bottom, Metrics.s)
     }
   }
 }
 
 struct Legend: View {
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: Metrics.m) {
       legendLine("usa", dash: [], color: .secondary)
       legendLine("implementa / extiende", dash: [6, 4], color: .secondary)
-      legendLine("viola capas", dash: [], color: .red)
+      legendLine("viola capas", dash: [], color: Semantic.error)
       HStack(spacing: 4) {
         RoundedRectangle(cornerRadius: 3).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2])).frame(width: 16, height: 10)
         Text("sin cambios")
       }
-      HStack(spacing: 6) {
-        ForEach([ChangeStatus.added, .modified, .deleted], id: \.self) { s in
+      HStack(spacing: Metrics.s) {
+        ForEach([ChangeStatus.added, .deleted], id: \.self) { s in
           HStack(spacing: 2) { Rectangle().fill(s.color).frame(width: 4, height: 10); Text(s.label) }
         }
       }
     }
-    .font(.system(size: 10))
+    .font(Typo.secondary)
     .foregroundStyle(.secondary)
     .fixedSize()
-    .padding(.leading, 8)
   }
 
   private func legendLine(_ text: String, dash: [CGFloat], color: Color) -> some View {
