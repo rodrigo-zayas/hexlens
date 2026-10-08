@@ -42,7 +42,7 @@ struct UsagesPopupView: View {
                 row(h).id(h)
                   .listRowBackground(selection == h ? Color.accentColor.opacity(0.25) : Color.clear)
                   .contentShape(Rectangle())
-                  .onTapGesture { open(h) }
+                  .onTapGesture { open(h) }.handCursor()
               }
             } header: { header(g) }
           }

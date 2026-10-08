@@ -139,7 +139,7 @@ public struct GraphCanvas: View {
           violations: counts.violations[unit.id] ?? 0)
           .frame(width: frame.width, height: frame.height)
           .contentShape(Rectangle())
-          .onTapGesture { onSelect(unit.id) }
+          .onTapGesture { onSelect(unit.id) }.handCursor()
           .onHover { inside in onHover(inside ? unit.id : nil) }
           .id(unit.id)
           .position(x: frame.midX, y: frame.midY)

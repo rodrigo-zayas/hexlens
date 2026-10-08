@@ -42,7 +42,7 @@ struct QuickOpenView: View {
                 row(e, selected: i == selection)
                   .id(i)
                   .contentShape(Rectangle())
-                  .onTapGesture { model.openQuickOpen(e) }
+                  .onTapGesture { model.openQuickOpen(e) }.handCursor()
               }
             }
           }

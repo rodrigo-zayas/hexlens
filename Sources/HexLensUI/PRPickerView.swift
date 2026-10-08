@@ -26,9 +26,9 @@ struct PRPickerView: View {
         Picker("", selection: $model.prFilter) {
           ForEach(PRFilter.allCases) { Text($0.title).tag($0) }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.segmented).handCursor()
         .frame(width: 300)
-        Button { model.refreshPRs() } label: { Image(systemName: "arrow.clockwise") }
+        Button { model.refreshPRs() } label: { Image(systemName: "arrow.clockwise") }.handCursor()
       }
 
       TextField("Filtrar por título, número, autor o rama", text: $query)
@@ -42,7 +42,7 @@ struct PRPickerView: View {
         } else {
           List(filtered) { pr in
             Button { model.open(pr) } label: { PRRow(pr: pr) }
-              .buttonStyle(.plain)
+              .buttonStyle(.plain).handCursor()
           }
           .listStyle(.inset(alternatesRowBackgrounds: true))
         }
@@ -54,19 +54,19 @@ struct PRPickerView: View {
         Text("PR nº").foregroundStyle(.secondary)
         TextField("12345", text: $number).frame(width: 90)
           .onSubmit(openNumber)
-        Button("Abrir", action: openNumber).disabled(Int(number) == nil)
+        Button("Abrir", action: openNumber).disabled(Int(number) == nil).handCursor(Int(number) != nil)
         Spacer()
         Text("o comparar").foregroundStyle(.secondary)
         TextField("base", text: $base).frame(width: 140)
         Text("…")
         TextField("cabeza", text: $head).frame(width: 140)
-        Button("Comparar") { model.compare(base: base, head: head) }
+        Button("Comparar") { model.compare(base: base, head: head) }.handCursor()
       }
       .textFieldStyle(.roundedBorder)
 
       HStack {
         Spacer()
-        Button("Cerrar") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Cerrar") { dismiss() }.keyboardShortcut(.cancelAction).handCursor()
       }
     }
     .padding(18)
@@ -120,14 +120,14 @@ struct WelcomeView: View {
       Text("Revisa una PR de Java como un hexágono: capas, paquetes y relaciones, y el diff al pulsar.")
         .foregroundStyle(.secondary)
       Button("Abrir repositorio…") { model.chooseRepository() }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.borderedProminent).handCursor()
         .controlSize(.large)
       if !model.recentRepos.isEmpty {
         VStack(alignment: .leading, spacing: 4) {
           Text("Recientes").font(.caption).foregroundStyle(.secondary)
           ForEach(model.recentRepos, id: \.self) { path in
             Button((path as NSString).lastPathComponent) { model.openRepository(URL(fileURLWithPath: path)) }
-              .buttonStyle(.link)
+              .buttonStyle(.link).handCursor()
               .help(path)
           }
         }

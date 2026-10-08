@@ -18,7 +18,7 @@ public struct RootView: View {
           ContentUnavailableView {
             Label("Elige una PR", systemImage: "arrow.triangle.pull")
           } actions: {
-            Button("Ver PRs…") { model.showPRPicker = true }
+            Button("Ver PRs…") { model.showPRPicker = true }.handCursor()
           }
         } else {
           CenterPane()
@@ -118,7 +118,7 @@ struct CenterPane: View {
         Toggle(isOn: $model.showTests) {
           Label("Tests", systemImage: "testtube.2")
         }
-        .toggleStyle(.button)
+        .toggleStyle(.button).handCursor()
         .controlSize(.small)
         .help("Mostrar u ocultar los tests en el mapa (⌘⇧T)")
       }
@@ -172,7 +172,7 @@ struct SummaryBar: View {
         if !warnings.isEmpty { Tag(text: "\(warnings.count) avisos", symbol: "exclamationmark.triangle") }
         if let entry = g.entryPoint.flatMap(g.unit) {
           Button { model.select(entry.id) } label: { Tag(text: "Empieza por \(entry.typeName)", symbol: "flag") }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).handCursor()
             .help("Punto de entrada sugerido")
         }
       }
