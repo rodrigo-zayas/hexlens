@@ -55,6 +55,8 @@ struct SidebarView: View {
         .padding(.vertical, 4)
         .selectionDisabled()
 
+        if !model.notes.isEmpty { NotesSection().selectionDisabled() }
+
         let numbers = Dictionary(model.order.enumerated().map { ($1, $0 + 1) }, uniquingKeysWith: { a, _ in a })
         ForEach(sections) { section in
           Section {
@@ -118,6 +120,37 @@ private struct FileRow: View {
       Spacer(minLength: 0)
       if violations > 0 { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.system(size: 10)) }
       Text("+\(unit.additions)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.green)
+    }
+  }
+}
+
+
+/// Notas de la PR: fichero:líneas y primera línea del texto; clic salta al código.
+private struct NotesSection: View {
+  @EnvironmentObject var model: AppModel
+  @State private var expanded = true
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $expanded) {
+      ForEach(model.notes) { n in
+        Button { model.goToNote(n.id) } label: {
+          VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 4) {
+              Text("\((n.path as NSString).lastPathComponent):\(n.startLine == n.endLine ? "\(n.startLine)" : "\(n.startLine)-\(n.endLine)")")
+                .font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
+              if n.outdated { Pill(text: "desactualizada", color: .gray) }
+            }
+            Text(n.body.split(separator: "\n").first.map(String.init) ?? "")
+              .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(n.path)
+      }
+    } label: {
+      Label("Notas (\(model.notes.count))", systemImage: "note.text").font(.subheadline.weight(.semibold))
     }
   }
 }
