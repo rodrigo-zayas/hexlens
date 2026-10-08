@@ -1,0 +1,25 @@
+README.md
+  s_d6efb71f7a515c::t_348089936eecfd 1,41
+docs/logo.svg
+  s_d6efb71f7a515c::t_6d640e856fb6f1 1-40
+scripts/make-icon.sh
+  s_d6efb71f7a515c::t_4d26c05273ef1f 1-35
+scripts/build-app.sh
+  s_d6efb71f7a515c::t_18663d456bd529 15,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4965a1f503da428e7093f0f14b0f2e711cd73c3e",
+  "prompts": {},
+  "sessions": {
+    "s_d6efb71f7a515c": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "8205446b-c15a-4bea-8072-b7901d715950",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
