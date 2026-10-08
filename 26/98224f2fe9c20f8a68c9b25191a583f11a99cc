@@ -1,0 +1,71 @@
+README.md
+  s_d4d2b768903e60::t_e5673aa5b46ecb 1-98
+Sources/HexLens/App.swift
+  s_d4d2b768903e60::t_e26f4f81485789 1-82
+Sources/HexLensCore/Analysis/JavaAnalyzer.swift
+  s_d4d2b768903e60::t_72e79dcb6bf2a7 1-280
+Sources/HexLensCore/Analysis/JavaLexer.swift
+  s_d4d2b768903e60::t_88eb9cf9fb959f 1-160
+Sources/HexLensCore/Analysis/LanguageAnalyzer.swift
+  s_d4d2b768903e60::t_28902bef4e2c74 1-46
+Sources/HexLensCore/ExplainPrompt.swift
+  s_d4d2b768903e60::t_d7f9b1f07b50d4 1-75
+Sources/HexLensCore/Git.swift
+  s_d4d2b768903e60::t_ec16a3f475e9fe 1-129
+Sources/HexLensCore/GitHub.swift
+  s_d4d2b768903e60::t_c75b1bf636e3b3 1-72
+Sources/HexLensCore/Graph.swift
+  s_d4d2b768903e60::t_d2dc4dd080ab1c 1-262
+Sources/HexLensCore/GraphLayout.swift
+  s_d4d2b768903e60::t_a2bb5111f6a764 1-118
+Sources/HexLensCore/ReviewLoader.swift
+  s_d4d2b768903e60::t_5597c0108086f7 1-122
+Sources/HexLensCore/Shell.swift
+  s_d4d2b768903e60::t_fff8d23153f862 1-85
+Sources/HexLensUI/AppModel.swift
+  s_d4d2b768903e60::t_6ef7fd58ce56ae 1-625
+Sources/HexLensUI/ClaudeLauncher.swift
+  s_2cc79eeb73915c::t_3b4ddba0e919ed 1-46
+Sources/HexLensUI/CodeView.swift
+  s_d4d2b768903e60::t_556a00be3ce0f2 1-309
+Sources/HexLensUI/DetailView.swift
+  s_d4d2b768903e60::t_ecce9b6aceb8f8 1-221
+Sources/HexLensUI/FlowsView.swift
+  s_2cc79eeb73915c::t_e068573bc7d66e 1-144
+Sources/HexLensUI/GraphCanvas.swift
+  s_d4d2b768903e60::t_730853fc5c7196 1-232
+Sources/HexLensUI/RootView.swift
+  s_d4d2b768903e60::t_52aafab7b13f06 1-288
+Sources/HexLensUI/Snapshot.swift
+  s_d4d2b768903e60::t_50de17afd4faa5 1-27
+Sources/hexlens-cli/main.swift
+  s_d4d2b768903e60::t_8fb2b4576adc4b 1-53
+Tests/HexLensCoreTests/CoreTests.swift
+  s_d4d2b768903e60::t_f526f50e6b621e 1-140
+scripts/build-app.sh
+  s_d4d2b768903e60::t_b99c9acc6a9e03 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2698224f2fe9c20f8a68c9b25191a583f11a99cc",
+  "prompts": {},
+  "sessions": {
+    "s_2cc79eeb73915c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f8d7cbb-76f0-46d8-8639-0096e1fb5f38",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    },
+    "s_d4d2b768903e60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92338beb-179a-4842-8773-3144ac8e081c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
