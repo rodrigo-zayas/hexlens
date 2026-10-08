@@ -1,0 +1,23 @@
+Sources/HexLensCore/FoldRegions.swift
+  s_77773cf9a8b942::t_42fc1832cb4d85 1-86
+Sources/HexLensUI/CodeView.swift
+  s_77773cf9a8b942::t_f46a6dc3b3bb00 121,148,178,198,200-204,405-411,424,456-469,473,477-479,482-487,493-640,676,714,792,822-840
+Tests/HexLensCoreTests/FoldRegionsTests.swift
+  s_77773cf9a8b942::t_81c6861a8a4f49 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c86e998d186535a6f601ff2aafb1b6328109441",
+  "prompts": {},
+  "sessions": {
+    "s_77773cf9a8b942": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "08bef0da-841b-401c-acd2-0c7055dc6bdf",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
