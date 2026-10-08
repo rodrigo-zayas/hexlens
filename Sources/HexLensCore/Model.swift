@@ -56,7 +56,7 @@ public enum Layer: String, CaseIterable, Codable, Sendable {
 public enum Role: String, CaseIterable, Codable, Sendable {
   case entity, port, domainService, event, exception
   case useCase, appService, params
-  case controller, consumer, handler, scheduler, operation
+  case controller, consumer, handler, scheduler, operation, job, policy
   case adapter, client, publisher, infraService, mapper, dto
   case configuration, bootstrap, build, resource, other
 
@@ -75,6 +75,8 @@ public enum Role: String, CaseIterable, Codable, Sendable {
     case .handler: "handler / worker"
     case .scheduler: "scheduler"
     case .operation: "operation"
+    case .job: "job"
+    case .policy: "policy"
     case .adapter: "adaptador"
     case .client: "cliente"
     case .publisher: "publisher"
@@ -104,6 +106,8 @@ public enum Role: String, CaseIterable, Codable, Sendable {
     case .handler: "tray.full"
     case .scheduler: "clock"
     case .operation: "wrench.and.screwdriver"
+    case .job: "gearshape.arrow.triangle.2.circlepath"
+    case .policy: "lock.shield"
     case .adapter: "externaldrive"
     case .client: "arrow.up.forward.app"
     case .publisher: "paperplane"

@@ -24,7 +24,7 @@ public enum ReviewLoader {
   public static func load(
     repo: GitRepo, base: String, head: String, title: String? = nil,
     profile: ArchitectureProfile? = nil,
-    analyzers: [LanguageAnalyzer] = [JavaAnalyzer()],
+    analyzers: [LanguageAnalyzer] = Analyzers.all,
     progress: (String) -> Void = { _ in }
   ) throws -> ReviewSession {
     let headSHA = try repo.commit(head)

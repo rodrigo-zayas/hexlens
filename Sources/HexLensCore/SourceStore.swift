@@ -19,7 +19,6 @@ public struct ParsedFile: Sendable {
 /// Caché de ficheros por revisión. Se usa desde hilos de fondo.
 public final class SourceStore: @unchecked Sendable {
   private let repo: GitRepo
-  private let analyzer = JavaAnalyzer()
   private var texts: [String: String?] = [:]
   private var parsed: [String: ParsedFile] = [:]
   private let lock = NSLock()
@@ -41,8 +40,9 @@ public final class SourceStore: @unchecked Sendable {
   public func parsed(_ path: String, at rev: String) -> ParsedFile? {
     let key = "\(rev):\(path)"
     if let p = lock.withLock({ parsed[key] }) { return p }
-    guard analyzer.handles(path), let text = text(path, at: rev) else { return nil }
-    let tokens = JavaLexer.tokens(text)
+    guard let analyzer = Analyzers.for(path), let text = text(path, at: rev) else { return nil }
+    // El lexer es de Java: otros lenguajes se quedan sin tokens ni semántica.
+    let tokens = analyzer.language == "java" ? JavaLexer.tokens(text) : []
     let p = ParsedFile(
       path: path, text: text, facts: analyzer.analyze(path: path, source: text), tokens: tokens,
       semantics: JavaSemantics.analyze(text: text, tokens: tokens))

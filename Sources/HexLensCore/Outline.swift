@@ -10,6 +10,27 @@ public struct OutlineEntry: Hashable, Sendable {
 }
 
 public enum Outline {
+  /// Estructura de un fichero según su lenguaje; vacía si no hay analizador.
+  public static func entries(path: String, source: String) -> [OutlineEntry] {
+    switch Analyzers.for(path)?.language {
+    case "java": java(source)
+    case "ruby": ruby(path: path, source: source)
+    default: []
+    }
+  }
+
+  /// Estructura de un fichero Ruby: clase o módulo principal y sus `def`.
+  public static func ruby(path: String = "", source: String) -> [OutlineEntry] {
+    let facts = RubyAnalyzer().analyze(path: path, source: source)
+    let total = source.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+    var out: [OutlineEntry] = []
+    if let primary = facts.primary, let line = facts.primaryLine {
+      out.append(OutlineEntry(name: primary.name, kind: .type, line: line, endLine: total))
+    }
+    for m in facts.members { out.append(OutlineEntry(name: m.name, kind: .method, line: m.startLine, endLine: m.endLine)) }
+    return out.sorted { ($0.line, $0.endLine) < ($1.line, $1.endLine) }
+  }
+
   /// Estructura de un fichero Java: tipo principal, miembros de primer nivel y campos, ordenados por línea.
   public static func java(_ source: String) -> [OutlineEntry] {
     let facts = JavaAnalyzer().analyze(path: "", source: source)
