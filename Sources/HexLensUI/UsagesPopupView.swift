@@ -7,9 +7,7 @@ struct UsagesPopupView: View {
   @EnvironmentObject var model: AppModel
   @State private var filter = ""
   @State private var query = ""
-  /// Desplazamiento arrastrando la cabecera; se mantiene entre aperturas.
-  @Binding var offset: CGSize
-  @State private var dragStart: CGSize?
+  @State private var hovered: UsageHit?
   @State private var selection: UsageHit?
   @FocusState private var filterFocused: Bool
 
@@ -42,21 +40,7 @@ struct UsagesPopupView: View {
         }
       }
       .padding(10)
-      .contentShape(Rectangle())
-      .onContinuousHover { phase in
-        if case .active = phase { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
-      }
-      .gesture(
-        DragGesture(coordinateSpace: .global)
-          .onChanged { g in
-            let start = dragStart ?? offset
-            dragStart = start
-            offset = CGSize(width: start.width + g.translation.width, height: start.height + g.translation.height)
-            NSCursor.closedHand.set()
-          }
-          .onEnded { _ in dragStart = nil; NSCursor.openHand.set() }
-      )
-      .help("Arrastra para mover")
+      .frame(height: FloatingPopupPosition.handleHeight)
       if state.global {
         TextField("Texto a buscar en todo el repo (↩)", text: $query)
           .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
@@ -75,8 +59,12 @@ struct UsagesPopupView: View {
             Section {
               ForEach(g.hits, id: \.self) { h in
                 row(h).id(h)
-                  .listRowBackground(selection == h ? Color.accentColor.opacity(0.25) : Color.clear)
+                  .listRowBackground(
+                    selection == h ? Color.accentColor.opacity(0.25) : hovered == h ? Color.primary.opacity(0.08) : Color.clear)
                   .contentShape(Rectangle())
+                  .onHover { inside in
+                    if inside { hovered = h } else if hovered == h { hovered = nil }
+                  }
                   .onTapGesture { open(h) }.handCursor()
               }
             } header: { header(g) }
@@ -146,4 +134,46 @@ struct UsagesPopupView: View {
     model.usagePopup = nil
     model.go(to: CodeLocation(path: h.path, line: h.line))
   }
+}
+
+/// Panel flotante que se arrastra por su franja superior. El arrastre vive aquí (y no en la vista
+/// padre) para que cada movimiento solo redibuje este contenedor y vaya fluido.
+struct FloatingPopup<Content: View>: View {
+  @ViewBuilder var content: Content
+  @State private var offset = FloatingPopupPosition.saved
+  @GestureState private var drag = CGSize.zero
+
+  var body: some View {
+    content
+      .overlay(alignment: .top) {
+        Color.clear
+          .frame(height: FloatingPopupPosition.handleHeight)
+          .contentShape(Rectangle())
+          .onContinuousHover { phase in
+            // Durante el arrastre manda la mano cerrada aunque el ratón se salga de la franja.
+            guard drag == .zero else { NSCursor.closedHand.set(); return }
+            if case .active = phase { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
+          }
+          .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+              .updating($drag) { g, state, _ in state = g.translation }
+              .onChanged { _ in NSCursor.closedHand.set() }
+              .onEnded { g in
+                offset.width += g.translation.width
+                offset.height += g.translation.height
+                FloatingPopupPosition.saved = offset
+                NSCursor.openHand.set()
+              }
+          )
+          .help("Arrastra para mover")
+      }
+      .compositingGroup()
+      .offset(x: offset.width + drag.width, y: offset.height + drag.height)
+  }
+}
+
+/// Posición del panel entre aperturas mientras la app sigue abierta.
+@MainActor enum FloatingPopupPosition {
+  static var saved = CGSize.zero
+  static let handleHeight: CGFloat = 40
 }
