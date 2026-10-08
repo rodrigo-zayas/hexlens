@@ -178,7 +178,7 @@ struct MapScrollView: NSViewRepresentable {
           self.hovered = id
           self.render()
         },
-        zoom: z, visibleRect: region)
+        visibleRect: region)
       host.rootView = AnyView(
         canvas
           .scaleEffect(z, anchor: .topLeading)

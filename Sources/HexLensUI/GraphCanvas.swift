@@ -10,16 +10,14 @@ public struct GraphCanvas: View {
   var reviewed: Set<String> = []
   var onSelect: (String) -> Void = { _ in }
   var onHover: (String?) -> Void = { _ in }
-  private(set) var zoom: CGFloat = 1
   /// Solo se crean vistas para lo que cae en este rectángulo (coordenadas del mapa).
   var visibleRect: CGRect = .infinite
 
   public init(
     graph: PRGraph, layout: GraphLayout, selectedID: String? = nil, hoveredID: String? = nil,
     reviewed: Set<String> = [], onSelect: @escaping (String) -> Void = { _ in },
-    onHover: @escaping (String?) -> Void = { _ in }, zoom: CGFloat = 1, visibleRect: CGRect = .infinite
+    onHover: @escaping (String?) -> Void = { _ in }, visibleRect: CGRect = .infinite
   ) {
-    self.zoom = zoom
     self.visibleRect = visibleRect
     self.graph = graph
     self.layout = layout
@@ -43,14 +41,6 @@ public struct GraphCanvas: View {
     default: "cube"
     }
   }
-
-  /// 0 = vista compacta (alejado), 1 = tarjeta completa; transición suave entre 0.38 y 0.62.
-  private var detail: CGFloat {
-    let t = min(max((zoom - 0.38) / 0.24, 0), 1)
-    return t * t * (3 - 2 * t)
-  }
-  /// Alejado, los títulos crecen para seguir siendo legibles.
-  private var titleScale: CGFloat { 1 + (min(0.5 / max(zoom, 0.01), 2) - 1) * (1 - detail) }
 
   private var focus: String? { hoveredID ?? selectedID }
 
@@ -119,10 +109,9 @@ public struct GraphCanvas: View {
               .background(Color.accentColor.opacity(0.14), in: Capsule())
           }
           Text(box.title)
-            .font(.system(size: (box.level == 1 ? 13 : 10) * titleScale, weight: box.level == 1 ? .semibold : .medium))
-            .minimumScaleFactor(0.5)
-          if !box.subtitle.isEmpty && detail > 0 {
-            Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary).opacity(detail)
+            .font(.system(size: box.level == 1 ? 13 : 10, weight: box.level == 1 ? .semibold : .medium))
+          if !box.subtitle.isEmpty {
+            Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
           }
         }
         .lineLimit(1)
@@ -147,9 +136,7 @@ public struct GraphCanvas: View {
           reviewed: reviewed.contains(unit.id),
           isEntry: unit.id == graph.entryPoint,
           tests: counts.tests[unit.id] ?? 0,
-          violations: counts.violations[unit.id] ?? 0,
-          detail: detail,
-          zoom: zoom)
+          violations: counts.violations[unit.id] ?? 0)
           .frame(width: frame.width, height: frame.height)
           .contentShape(Rectangle())
           .onTapGesture { onSelect(unit.id) }
@@ -253,35 +240,13 @@ struct NodeView: View {
   let isEntry: Bool
   let tests: Int
   let violations: Int
-  var detail: CGFloat = 1
-  var zoom: CGFloat = 1
 
   var body: some View {
-    ZStack {
-      if detail < 1 { compact.opacity(1 - detail) }
-      if detail > 0 { full.opacity(detail) }
-    }
+    full
     .scaleEffect(selected ? 1.03 : 1)
     .shadow(color: selected ? Color.accentColor.opacity(0.35) : .clear, radius: selected ? 8 : 0)
     .animation(.easeOut(duration: 0.18), value: dimmed)
     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selected)
-  }
-
-  /// Alejado: solo el nombre, grande, sobre el color del estado.
-  private var compact: some View {
-    Text(unit.typeName)
-      .font(.system(size: min(11 / max(zoom, 0.01), 22), weight: .semibold))
-      .strikethrough(unit.status == .deleted)
-      .lineLimit(2)
-      .minimumScaleFactor(0.4)
-      .multilineTextAlignment(.center)
-      .padding(.horizontal, 6)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(RoundedRectangle(cornerRadius: 7).fill(unit.status.color.opacity(unit.isGhost ? 0.12 : 0.3)))
-      .overlay(
-        RoundedRectangle(cornerRadius: 7)
-          .strokeBorder(selected ? Color.accentColor : .secondary.opacity(0.35), lineWidth: selected ? 4 : 1))
-      .opacity(dimmed ? 0.35 : 1)
   }
 
   private var direction: String? {
