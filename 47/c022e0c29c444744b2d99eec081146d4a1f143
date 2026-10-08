@@ -1,0 +1,19 @@
+Sources/HexLensUI/CodeView.swift
+  s_574630eae550c0::t_82e9affcf0b9a5 153,761-777
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47c022e0c29c444744b2d99eec081146d4a1f143",
+  "prompts": {},
+  "sessions": {
+    "s_574630eae550c0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11b3c-45d9-7931-bcc2-1eaf74123503",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
