@@ -1,0 +1,29 @@
+README.md
+  s_0175898ad7c154::t_be7ee154d3ba81 37
+Sources/HexLensCore/FuzzyMatch.swift
+  s_0175898ad7c154::t_d91718b162472c 1-57
+Sources/HexLensUI/AppModel.swift
+  s_0175898ad7c154::t_90945587d4d91a 64-78,95,316-352
+Sources/HexLensUI/QuickOpenView.swift
+  s_0175898ad7c154::t_735ebab36265ca 1-75
+Sources/HexLensUI/RootView.swift
+  s_0175898ad7c154::t_1a44d3183dec3d 37,199-201
+Tests/HexLensCoreTests/FuzzyMatchTests.swift
+  s_0175898ad7c154::t_94b542e0e481b5 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a1ddea92263d0ab696b8b6d42bd765a749d8047",
+  "prompts": {},
+  "sessions": {
+    "s_0175898ad7c154": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "e79f021f-54f8-44cd-8caf-bb63c4c41ec8",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
