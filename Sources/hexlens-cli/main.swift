@@ -39,9 +39,7 @@ do {
     let strategy = value("--order").flatMap(ReadingStrategy.init(rawValue:)) ?? .insideOut
     print(Report.text(session, strategy: strategy))
   case "prompt":
-    print(ExplainPrompt.pr(session, flows: FlowBuilder.build(session: session)))
-  case "flows":
-    print(FlowBuilder.outline(FlowBuilder.build(session: session)))
+    print(ExplainPrompt.pr(session))
   case "snapshot":
     let out = URL(fileURLWithPath: value("--out") ?? "hexlens.png")
     let context = value("--context").flatMap(ContextMode.init(rawValue:)) ?? .key

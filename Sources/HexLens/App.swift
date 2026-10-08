@@ -48,10 +48,9 @@ enum SelfCapture {
     Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { timer in
       MainActor.assumeIsolated {
         let windows = NSApp.windows.filter { $0.isVisible && $0.contentView != nil && $0.frame.height > 200 }
-        guard model.session != nil, model.busy == nil, model.flows != nil, let window = windows.first, let view = window.contentView?.superview else { return }
+        guard model.session != nil, model.busy == nil, let window = windows.first, let view = window.contentView?.superview else { return }
         timer.invalidate()
         let env = ProcessInfo.processInfo.environment
-        if let mode = env["HEXLENS_CAPTURE_MODE"], let m = CenterMode(rawValue: mode) { model.centerMode = m }
         for text in (env["HEXLENS_CAPTURE_FOLLOW"] ?? "").split(separator: ",") {
           FileHandle.standardError.write(Data("sigue \(text): \(model.followLink(text: String(text))) → \(model.location?.path ?? "-"):\(model.location?.line ?? 0)\n".utf8))
         }

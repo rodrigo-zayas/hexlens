@@ -47,7 +47,7 @@ struct DetailView: View {
         }
       }
     } else {
-      ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un paso de un flujo, un nodo del mapa o un fichero de la lista."))
+      ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un nodo del mapa o un fichero de la lista."))
     }
   }
 

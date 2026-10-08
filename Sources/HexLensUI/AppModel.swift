@@ -2,12 +2,6 @@ import AppKit
 import HexLensCore
 import SwiftUI
 
-public enum CenterMode: String, CaseIterable, Identifiable {
-  case flows, map
-  public var id: String { rawValue }
-  public var title: String { self == .flows ? "Flujos" : "Mapa" }
-}
-
 /// Modelo de Claude por ID explícito, para saber siempre qué versión corre.
 public struct ClaudeModel: Hashable, Identifiable {
   /// "" = lo que tenga configurado el Claude Code del usuario.
@@ -86,12 +80,11 @@ public final class AppModel: ObservableObject {
   @Published public var showTests = false { didSet { relayout() } }
   @Published public var contextMode: ContextMode = .none { didSet { relayout() } }
   @Published public var strategy: ReadingStrategy = .insideOut { didSet { recomputeOrder() } }
-  @Published public var centerMode: CenterMode = .flows
   @Published public var zoom: CGFloat = 1
   @Published public var appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .dark {
     didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
   }
-  /// Columnas visibles: por defecto flujos + código; "solo código" deja el visor a pantalla completa.
+  /// Columnas visibles: por defecto lista + código; "solo código" deja el visor a pantalla completa.
   @Published public var columns: NavigationSplitViewVisibility = .doubleColumn
   public func toggleCodeOnly() { columns = columns == .detailOnly ? .doubleColumn : .detailOnly }
   @Published public private(set) var layout = GraphLayout()
@@ -145,10 +138,6 @@ public final class AppModel: ObservableObject {
     findIndex = ((findIndex + d) % n + n) % n
   }
   private var contentCache: [String: CodeContent] = [:]
-
-  // Flujos
-  @Published public private(set) var flows: [FlowNode]?
-  @Published public var flowsOnlyChanges = true
 
   @Published public var claudeModelID = UserDefaults.standard.string(forKey: "claudeModelID") ?? "" {
     didSet { UserDefaults.standard.set(claudeModelID, forKey: "claudeModelID") }
@@ -256,8 +245,6 @@ public final class AppModel: ObservableObject {
         Task { @MainActor in self.busy = message }
       }
       await MainActor.run { self.present(session, pr: pr) }
-      let flows = FlowBuilder.build(session: session)
-      await MainActor.run { if self.session?.headSHA == session.headSHA { self.flows = flows } }
     } catch {
       await MainActor.run { self.fail(error) }
     }
@@ -267,7 +254,6 @@ public final class AppModel: ObservableObject {
     self.session = session
     currentPR = pr
     impact = [:]
-    flows = nil
     contentCache = [:]
     backStack = []
     forwardStack = []
@@ -313,7 +299,7 @@ public final class AppModel: ObservableObject {
 
   // MARK: - Navegación
 
-  /// Selecciona un fichero de la PR (grafo, lista, flujos) y lo abre en el visor.
+  /// Selecciona un fichero de la PR (grafo o lista) y lo abre en el visor.
   public func select(_ id: String?, line: Int? = nil, recordHistory: Bool = true) {
     guard let id else { selectedID = nil; return }
     go(to: CodeLocation(path: id, line: line), recordHistory: recordHistory)
@@ -646,17 +632,12 @@ public final class AppModel: ObservableObject {
 
   public func explainPR() {
     guard let s = session else { return }
-    launchClaude(ExplainPrompt.pr(s, flows: flows ?? []))
+    launchClaude(ExplainPrompt.pr(s))
   }
 
   public func explainFile(_ path: String) {
     guard let s = session else { return }
     launchClaude(ExplainPrompt.file(s, path: path))
-  }
-
-  public func explainFlow(_ flow: FlowNode) {
-    guard let s = session else { return }
-    launchClaude(ExplainPrompt.flow(s, flow: flow))
   }
 
   private func launchClaude(_ prompt: String) {
