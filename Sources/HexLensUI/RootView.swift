@@ -33,7 +33,22 @@ public struct RootView: View {
     .toolbar { toolbar }
     .navigationTitle(model.repo?.name ?? "HexLens")
     .navigationSubtitle(model.session?.title ?? "")
-    .sheet(item: $model.usagePopup) { _ in UsagesPopupView().environmentObject(model) }
+    .overlay {
+      // Flotante y no hoja: un clic fuera lo cierra.
+      if model.usagePopup != nil {
+        ZStack {
+          Color.black.opacity(0.12).contentShape(Rectangle())
+            .onTapGesture { model.usagePopup = nil }
+          UsagesPopupView()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+            .shadow(radius: 20)
+        }
+        .transition(.opacity)
+      }
+    }
+    .animation(.easeOut(duration: 0.12), value: model.usagePopup != nil)
+    .onAppear { SwipeNavigation.install(model) }
     .sheet(isPresented: $model.showPRPicker) { PRPickerView().environmentObject(model) }
     .sheet(item: $model.quickOpen) { QuickOpenView(mode: $0).environmentObject(model) }
     .overlay {
@@ -198,6 +213,7 @@ public struct ReviewCommands: Commands {
         .disabled(model.location == nil)
       Button("Buscar…") { model.showFind() }.keyboardShortcut("f").disabled(model.location == nil)
       Button("Buscar siguiente") { model.findNext() }.keyboardShortcut("g").disabled(model.location == nil)
+      Button("Buscar en el repo…") { model.showRepoSearch() }.keyboardShortcut("f", modifiers: [.command, .shift]).disabled(model.session == nil)
       Button("Buscar usos") { model.requestFindUsages() }
         .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(NSF7FunctionKey)!)), modifiers: .option).disabled(model.location == nil)
       Button("Buscar anterior") { model.findPrevious() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(model.location == nil)

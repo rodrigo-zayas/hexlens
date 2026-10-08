@@ -5,6 +5,7 @@ import SwiftUI
 struct UsagesPopupView: View {
   @EnvironmentObject var model: AppModel
   @State private var filter = ""
+  @State private var query = ""
   @State private var selection: UsageHit?
   @FocusState private var filterFocused: Bool
 
@@ -25,14 +26,28 @@ struct UsagesPopupView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text("Usos de ").foregroundStyle(.secondary) + Text(state.word).bold().font(.system(.body, design: .monospaced))
+        if state.global {
+          Text("Buscar en el repo").foregroundStyle(.secondary)
+        } else {
+          Text("Usos de ").foregroundStyle(.secondary) + Text(state.word).bold().font(.system(.body, design: .monospaced))
+        }
         Spacer()
         if state.loading { ProgressView().controlSize(.small) }
-        else { Text("\(flat.count) usos en \(groups.count) ficheros").foregroundStyle(.secondary).font(.caption) }
+        else if !state.word.isEmpty {
+          Text("\(flat.count) \(state.global ? "resultados" : "usos") en \(groups.count) ficheros").foregroundStyle(.secondary).font(.caption)
+        }
       }.padding(10)
-      TextField("Filtrar", text: $filter)
-        .textFieldStyle(.roundedBorder).padding(.horizontal, 10).padding(.bottom, 8)
-        .focused($filterFocused)
+      if state.global {
+        TextField("Texto a buscar en todo el repo (↩)", text: $query)
+          .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
+          .padding(.horizontal, 10).padding(.bottom, 8)
+          .focused($filterFocused)
+          .onSubmit { model.searchRepo(query) }
+      } else {
+        TextField("Filtrar", text: $filter)
+          .textFieldStyle(.roundedBorder).padding(.horizontal, 10).padding(.bottom, 8)
+          .focused($filterFocused)
+      }
       Divider()
       ScrollViewReader { proxy in
         List {
@@ -50,17 +65,20 @@ struct UsagesPopupView: View {
         .listStyle(.plain)
         .onChange(of: selection) { _, new in if let new { proxy.scrollTo(new) } }
       }
-      if !state.loading && flat.isEmpty {
+      if !state.loading && flat.isEmpty && !state.word.isEmpty {
         Text("Sin resultados").foregroundStyle(.secondary).padding()
       }
     }
     .frame(width: 720, height: 460)
-    .onAppear { filterFocused = true; selection = flat.first }
+    .onAppear { query = state.word; filterFocused = true; selection = flat.first }
     .onChange(of: filter) { _, _ in selection = flat.first }
     .onChange(of: state.groups) { _, _ in selection = flat.first }
     .onKeyPress(.downArrow) { move(1); return .handled }
     .onKeyPress(.upArrow) { move(-1); return .handled }
-    .onKeyPress(.return) { if let s = selection { open(s) }; return .handled }
+    .onKeyPress(.return) {
+      if state.global, query != state.word { model.searchRepo(query) } else if let s = selection { open(s) }
+      return .handled
+    }
     .onKeyPress(.escape) { model.usagePopup = nil; return .handled }
   }
 
