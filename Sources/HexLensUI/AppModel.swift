@@ -160,7 +160,22 @@ public final class AppModel: ObservableObject {
     return TextSearch.matches(of: findQuery, in: c.document.text, caseSensitive: findCaseSensitive, wholeWord: findWholeWord)
   }
 
-  func showFind() { findVisible = true; findFocusSerial += 1 }
+  /// ⌘F: si hay texto seleccionado en el visor (una línea), se usa como búsqueda y se queda en esa coincidencia.
+  func showFind() {
+    if let tv = CodeNSTextView.focused, tv.window?.firstResponder === tv {
+      let sel = tv.selectedRange()
+      let text = (tv.string as NSString).substring(with: sel)
+      if sel.length > 0, sel.length <= 200, !text.contains("\n") {
+        findQuery = text
+        DispatchQueue.main.async { [weak self] in
+          guard let self else { return }
+          self.findIndex = self.findMatches.firstIndex { NSLocationInRange(sel.location, $0) } ?? 0
+        }
+      }
+    }
+    findVisible = true
+    findFocusSerial += 1
+  }
   func closeFind() { findVisible = false }
   func findNext() { stepFind(1) }
   func findPrevious() { stepFind(-1) }

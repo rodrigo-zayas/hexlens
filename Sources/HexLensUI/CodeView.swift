@@ -296,6 +296,23 @@ struct CodeTextView: NSViewRepresentable {
 
 /// NSTextView que pinta el fondo de las líneas añadidas/quitadas a todo el ancho.
 final class CodeNSTextView: NSTextView {
+  /// Último visor con el foco, para que ⌘F tome su selección.
+  static weak var focused: CodeNSTextView?
+
+  override func becomeFirstResponder() -> Bool {
+    let ok = super.becomeFirstResponder()
+    if ok { Self.focused = self }
+    return ok
+  }
+
+  /// Nunca más estrecho que el área visible: si no, al pasar de un fichero ancho a uno estrecho
+  /// el clip se queda con origen x negativo y el código aparece desplazado a la derecha.
+  override func setFrameSize(_ newSize: NSSize) {
+    var size = newSize
+    if let clip = enclosingScrollView?.contentView { size.width = max(size.width, clip.bounds.width) }
+    super.setFrameSize(size)
+  }
+
   var lines: [CodeLine] = []
   var lineStarts: [Int] = []
   var theme = CodeTheme.light
