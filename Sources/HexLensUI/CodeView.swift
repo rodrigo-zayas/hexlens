@@ -104,7 +104,7 @@ struct CodeTextView: NSViewRepresentable {
     textView.isSelectable = true
     textView.isRichText = true
     textView.allowsUndo = false
-    textView.textContainerInset = NSSize(width: CodeNSTextView.gutterWidth + 8, height: 6)
+    textView.textContainerInset = NSSize(width: 8, height: 6)
     textView.isHorizontallyResizable = true
     textView.isVerticallyResizable = true
     textView.autoresizingMask = [.width, .height]
@@ -114,11 +114,9 @@ struct CodeTextView: NSViewRepresentable {
     textView.linkTextAttributes = [.cursor: NSCursor.pointingHand]
     textView.delegate = context.coordinator
     scrollView.documentView = textView
-    // El margen va fijo a la izquierda: hay que repintarlo al desplazar.
-    scrollView.contentView.postsBoundsChangedNotifications = true
-    NotificationCenter.default.addObserver(
-      forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main
-    ) { [weak textView] _ in textView?.needsDisplay = true }
+    scrollView.verticalRulerView = CodeGutterView(scrollView: scrollView, textView: textView)
+    scrollView.hasVerticalRuler = true
+    scrollView.rulersVisible = true
     let container = CodeContainerView(scrollView: scrollView, textView: textView)
     context.coordinator.textView = textView
     return container
@@ -153,6 +151,7 @@ struct CodeTextView: NSViewRepresentable {
     textView.onAddNote = onAddNote
     textView.onOpenNote = onOpenNote
     if textView.noteSpans != notes { textView.noteSpans = notes; textView.needsDisplay = true; container.strip.needsDisplay = true }
+    container.scrollView.verticalRulerView?.needsDisplay = true
     if addNoteSerial != c.lastNoteSerial {
       let first = c.lastNoteSerial == nil
       c.lastNoteSerial = addNoteSerial
@@ -393,48 +392,52 @@ final class CodeNSTextView: NSTextView {
     }
   }
 
-  // El margen se pinta encima del texto para que no se monte al desplazar en horizontal.
-  override func draw(_ dirtyRect: NSRect) {
-    super.draw(dirtyRect)
-    drawGutter(dirtyRect)
-  }
-
   static let gutterWidth: CGFloat = 50
 
-  /// Margen con número de línea (nuevo o viejo) y barra de cambio, fijo al borde izquierdo visible.
-  private func drawGutter(_ dirtyRect: NSRect) {
-    guard let lm = layoutManager, let tc = textContainer else { return }
-    let visible = visibleRect
-    let gutter = NSRect(x: visible.minX, y: dirtyRect.minY, width: Self.gutterWidth, height: dirtyRect.height)
+  /// Margen con número de línea (nuevo o viejo), barra de cambio y marcas de nota. Lo pinta `CodeGutterView`.
+  func drawGutter(in ruler: NSRulerView, rect dirty: NSRect) {
+    let rect = dirty.intersection(ruler.bounds)
+    NSBezierPath(rect: ruler.bounds).setClip()
     theme.gutter.setFill()
-    gutter.fill()
+    rect.fill()
     theme.gutterText.withAlphaComponent(0.25).setFill()
-    NSRect(x: gutter.maxX, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
-    guard !lines.isEmpty else { return }
+    NSRect(x: ruler.bounds.maxX - 1, y: rect.minY, width: 1, height: rect.height).fill()
+    guard let lm = layoutManager, let tc = textContainer, !lines.isEmpty else { return }
 
     let origin = textContainerOrigin
     let attrs: [NSAttributedString.Key: Any] = [
       .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular),
       .foregroundColor: theme.gutterText,
     ]
-    let glyphs = lm.glyphRange(forBoundingRect: dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y), in: tc)
+    let maxX = ruler.bounds.maxX - 1
+    let glyphs = lm.glyphRange(forBoundingRect: visibleRect.offsetBy(dx: -origin.x, dy: -origin.y), in: tc)
     lm.enumerateLineFragments(forGlyphRange: glyphs) { frag, _, _, glyphRange, _ in
       let line = self.lines[self.lineIndex(at: lm.characterIndexForGlyph(at: glyphRange.location))]
-      let y = frag.minY + origin.y
+      let r = ruler.convert(NSRect(x: 0, y: frag.minY + origin.y, width: 1, height: frag.height), from: self)
       switch line.kind {
       case .added: self.theme.addedBar.setFill()
       case .removed: self.theme.removedBar.setFill()
       default: NSColor.clear.setFill()
       }
-      NSRect(x: gutter.maxX - 4, y: y, width: 3, height: frag.height).fill()
+      NSRect(x: maxX - 4, y: r.minY, width: 3, height: r.height).fill()
       if let n = line.newNumber, let span = self.noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
         (span.outdated ? self.theme.gutterText : NSColor.systemBlue).setFill()
-        NSBezierPath(roundedRect: NSRect(x: gutter.minX + 3, y: y + frag.height / 2 - 3.5, width: 7, height: 7), xRadius: 2, yRadius: 2).fill()
+        NSBezierPath(roundedRect: NSRect(x: 3, y: r.midY - 3.5, width: 7, height: 7), xRadius: 2, yRadius: 2).fill()
       }
       guard let n = line.newNumber ?? line.oldNumber else { return }
       let label = NSAttributedString(string: "\(n)", attributes: attrs)
       let size = label.size()
-      label.draw(at: NSPoint(x: gutter.maxX - 9 - size.width, y: y + (frag.height - size.height) / 2))
+      label.draw(at: NSPoint(x: maxX - 9 - size.width, y: r.minY + (r.height - size.height) / 2))
+    }
+  }
+
+  /// Clic en el margen: abre la nota de esa línea si la hay. `y` en coordenadas del visor.
+  func gutterClick(y: CGFloat) {
+    guard let lm = layoutManager, let tc = textContainer, !lines.isEmpty else { return }
+    let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: y - textContainerOrigin.y), in: tc)
+    let line = lines[lineIndex(at: lm.characterIndexForGlyph(at: glyph))]
+    if let n = line.newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
+      onOpenNote(span.id)
     }
   }
 
@@ -469,19 +472,6 @@ final class CodeNSTextView: NSTextView {
     return menu
   }
 
-  override func mouseDown(with event: NSEvent) {
-    let p = convert(event.locationInWindow, from: nil)
-    if p.x - visibleRect.minX < Self.gutterWidth, let lm = layoutManager, let tc = textContainer, !lines.isEmpty {
-      let origin = textContainerOrigin
-      let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: p.y - origin.y), in: tc)
-      let line = lines[lineIndex(at: lm.characterIndexForGlyph(at: glyph))]
-      if let n = line.newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
-        onOpenNote(span.id)
-        return
-      }
-    }
-    super.mouseDown(with: event)
-  }
 
   func reveal(line: Int) {
     guard lines.indices.contains(line), lineStarts.indices.contains(line) else { return }
@@ -497,6 +487,32 @@ final class CodeNSTextView: NSTextView {
     scroll(NSPoint(x: 0, y: max(0, r.minY - visible / 3)))
     enclosingScrollView?.reflectScrolledClipView(enclosingScrollView!.contentView)
     if length > 0 { showFindIndicator(for: range) }
+  }
+}
+
+/// Margen fijo a la izquierda, fuera del área desplazable: ni el texto ni los fondos del diff lo tapan.
+final class CodeGutterView: NSRulerView {
+  init(scrollView: NSScrollView, textView: CodeNSTextView) {
+    super.init(scrollView: scrollView, orientation: .verticalRuler)
+    clientView = textView
+    ruleThickness = CodeNSTextView.gutterWidth
+    reservedThicknessForMarkers = 0
+    reservedThicknessForAccessoryView = 0
+    // Desde macOS 14 las vistas no recortan por defecto: sin esto el margen pinta encima del código.
+    clipsToBounds = true
+  }
+
+  required init(coder: NSCoder) { fatalError() }
+
+  private var codeView: CodeNSTextView? { clientView as? CodeNSTextView }
+
+  override func drawHashMarksAndLabels(in rect: NSRect) {
+    codeView?.drawGutter(in: self, rect: rect)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard let tv = codeView else { return }
+    tv.gutterClick(y: tv.convert(event.locationInWindow, from: nil).y)
   }
 }
 
