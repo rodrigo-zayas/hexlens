@@ -96,7 +96,6 @@ public final class AppModel: ObservableObject {
   /// Rama contra la que se compara la PR abierta, si no es su base real.
   @Published public private(set) var baseOverride: String?
   @Published public private(set) var selectedID: String?
-  @Published public var hoveredID: String?
   @Published public private(set) var busy: String?
   @Published public var errorMessage: String?
   @Published public var showPRPicker = false
