@@ -150,8 +150,7 @@ struct CodeTextView: NSViewRepresentable {
       let r = valid[current]
       DispatchQueue.main.async {
         textView.unfold(line: textView.lineIndex(at: r.location))
-        textView.scrollRangeToVisible(r)
-        textView.showFindIndicator(for: r)
+        textView.revealMatch(r)
       }
     }
   }
@@ -758,6 +757,23 @@ final class CodeNSTextView: NSTextView {
     return menu
   }
 
+
+  /// Muestra una coincidencia de búsqueda sin desplazar en horizontal salvo que no quepa desde la columna 0.
+  func revealMatch(_ range: NSRange) {
+    guard let lm = layoutManager, let tc = textContainer, let clip = enclosingScrollView?.contentView else {
+      scrollRangeToVisible(range); return
+    }
+    let glyphs = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+    var r = lm.boundingRect(forGlyphRange: glyphs, in: tc)
+    r.origin.x += textContainerOrigin.x
+    r.origin.y += textContainerOrigin.y
+    let b = clip.bounds
+    let x: CGFloat = r.maxX + 8 <= b.width ? 0 : max(0, r.maxX + 40 - b.width)
+    let y = (r.minY >= b.minY && r.maxY <= b.maxY) ? b.minY : max(0, r.minY - b.height / 3)
+    scroll(NSPoint(x: x, y: y))
+    enclosingScrollView?.reflectScrolledClipView(clip)
+    showFindIndicator(for: range)
+  }
 
   func reveal(line: Int) {
     guard lines.indices.contains(line), lineStarts.indices.contains(line) else { return }
