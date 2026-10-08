@@ -1,0 +1,42 @@
+name: Sincronizar main en develop
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: sync-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Merge de main en develop
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "develop ya contiene main" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! git merge --no-edit -m "chore: sincronizar main en develop" origin/main; then
+            git merge --abort
+            {
+              echo "Conflictos al mergear main en develop. Resuélvelo a mano:"
+              echo '```'
+              echo "git switch -c sync/main-develop origin/develop && git merge origin/main"
+              echo '```'
+              echo "y abre una PR a develop."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git push origin HEAD:develop

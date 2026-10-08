@@ -1,7 +1,10 @@
 #!/bin/zsh
 # Compila en release y empaqueta HexLens.app en ./dist (y opcionalmente en /Applications con --install).
+# HEXLENS_VERSION y HEXLENS_BUILD fijan la versión del bundle (las usa el workflow de release).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+VERSION="${HEXLENS_VERSION:-0.0.0-dev}"
+BUILD="${HEXLENS_BUILD:-1}"
 swift build -c release --product HexLens
 swift build -c release --product hexlens-cli
 APP=dist/HexLens.app
@@ -18,8 +21,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>dev.hexlens.app</string>
   <key>CFBundleExecutable</key><string>HexLens</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>

@@ -1,0 +1,58 @@
+name: Release
+
+# Cada push a main calcula la versión con conventional commits y, si hay feat/fix/breaking,
+# compila HexLens en macOS y publica una GitHub Release con la app y la CLI.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: next
+        run: |
+          version=$(scripts/next-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Siguiente versión: ${version:-ninguna}" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tests
+        run: swift test
+      - name: Compilar
+        run: HEXLENS_VERSION="$VERSION" HEXLENS_BUILD="$GITHUB_RUN_NUMBER" ./scripts/build-app.sh
+      - name: Empaquetar
+        run: |
+          ditto -c -k --keepParent dist/HexLens.app "HexLens-$VERSION-macos-arm64.zip"
+          tar -czf "hexlens-cli-$VERSION-macos-arm64.tar.gz" -C dist hexlens
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes \
+            "HexLens-$VERSION-macos-arm64.zip" \
+            "hexlens-cli-$VERSION-macos-arm64.tar.gz"
