@@ -3,31 +3,54 @@ import AppKit
 /// Atrás/adelante con el gesto de dos dedos, como en el navegador. Solo cuando la vista bajo el ratón
 /// ya no puede desplazarse en esa dirección; en el mapa los dos dedos siempre mueven el lienzo.
 @MainActor enum SwipeNavigation {
+  private enum Decision { case undecided, pass, swipe(back: Bool) }
   private static var monitor: Any?
-  private static var undecided = false
+  private static var decision = Decision.pass
+  private static var dx: CGFloat = 0
+  private static var dy: CGFloat = 0
+  private static var swallowMomentum = false
+  /// Recorrido horizontal (pt) necesario para navegar al levantar los dedos.
+  static let threshold: CGFloat = 90
 
   static func install(_ model: AppModel) {
     guard monitor == nil else { return }
     monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak model] event in
-      // Se decide una vez por gesto, con el primer evento que trae movimiento.
-      if event.phase == .began { undecided = true }
-      guard undecided, event.phase == .began || event.phase == .changed else { return event }
-      guard event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0 else { return event }
-      undecided = false
-      guard let model, NSEvent.isSwipeTrackingFromScrollEventsEnabled,
-        abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) * 2
-      else { return event }
-      let back = event.scrollingDeltaX > 0
-      guard back ? !model.backStack.isEmpty : !model.forwardStack.isEmpty, canSwipe(event, back: back) else { return event }
-      var done = false
-      event.trackSwipeEvent(options: [.lockDirection, .clampGestureAmount], dampenAmountThresholdMin: back ? 0 : -1, max: back ? 1 : 0) {
-        amount, phase, complete, _ in
-        if complete, !done, phase == .ended, abs(amount) >= 1 {
-          done = true
+      guard let model else { return event }
+      // Inercia tras un gesto de navegación: no debe desplazar la vista.
+      if event.phase.isEmpty, !event.momentumPhase.isEmpty { return swallowMomentum ? nil : event }
+      switch event.phase {
+      case .mayBegin: return event
+      case .began:
+        decision = .undecided; dx = 0; dy = 0; swallowMomentum = false
+      case .changed: break
+      case .ended, .cancelled:
+        defer { decision = .pass }
+        guard case .swipe(let back) = decision else { return event }
+        swallowMomentum = true
+        if event.phase == .ended, back ? dx >= threshold : dx <= -threshold {
           if back { model.back() } else { model.forward() }
         }
+        return nil
+      default: return event
       }
-      return nil
+      // dx > 0 = dedos hacia la derecha, con o sin desplazamiento natural.
+      dx += event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+      dy += event.scrollingDeltaY
+      switch decision {
+      case .pass: return event
+      case .swipe: return nil
+      case .undecided:
+        // Se decide una sola vez por gesto, cuando ya hay movimiento suficiente para saber la dirección.
+        guard abs(dx) + abs(dy) >= 6 else { return event }
+        let back = dx > 0
+        if abs(dx) > abs(dy) * 1.5, back ? !model.backStack.isEmpty : !model.forwardStack.isEmpty,
+          canSwipe(event, back: back) {
+          decision = .swipe(back: back)
+          return nil
+        }
+        decision = .pass
+        return event
+      }
     }
   }
 

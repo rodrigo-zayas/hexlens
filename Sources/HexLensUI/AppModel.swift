@@ -624,9 +624,37 @@ public final class AppModel: ObservableObject {
     }
     if text.isEmpty, findVisible { text = findQuery }
     if text.trimmingCharacters(in: .whitespaces).isEmpty {
-      usagePopup = UsagePopupState(word: "", groups: [], loading: false, global: true)
+      // Sin nada nuevo que buscar se recupera la última búsqueda con sus resultados.
+      usagePopup = lastRepoSearch ?? UsagePopupState(word: "", groups: [], loading: false, global: true)
     } else {
       searchRepo(text)
+    }
+  }
+
+  /// Última búsqueda en el repo, para que ⌘⇧F la recupere.
+  private var lastRepoSearch: UsagePopupState?
+
+  /// Abre un resultado de búsqueda dejando ⌘F activo con el término, para que siga resaltado en el visor.
+  func openSearchHit(_ hit: UsageHit, query: String, global: Bool) {
+    usagePopup = nil
+    go(to: CodeLocation(path: hit.path, line: hit.line))
+    findQuery = query
+    findCaseSensitive = !global
+    findWholeWord = !global
+    findVisible = true
+    // findQuery reinicia el índice al cambiar; se coloca después en la coincidencia de esa línea.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let c = self.content(for: hit.path) else { return }
+      let text = c.document.text as NSString
+      var line = 1, scanned = 0
+      self.findIndex = self.findMatches.firstIndex { r in
+        while scanned < r.location {
+          let next = text.range(of: "\n", options: .literal, range: NSRange(location: scanned, length: r.location - scanned))
+          guard next.location != NSNotFound else { scanned = r.location; break }
+          line += 1; scanned = next.location + 1
+        }
+        return line >= hit.line
+      } ?? 0
     }
   }
 
@@ -641,6 +669,7 @@ public final class AppModel: ObservableObject {
       await MainActor.run {
         guard self.usagePopup?.global == true, self.usagePopup?.word == text else { return }
         self.usagePopup = UsagePopupState(word: text, groups: groups, loading: false, changed: changed, global: true)
+        self.lastRepoSearch = self.usagePopup
       }
     }
   }
