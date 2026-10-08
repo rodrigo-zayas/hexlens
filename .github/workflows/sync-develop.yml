@@ -1,5 +1,6 @@
 name: Sincronizar main en develop
 
+# develop solo admite cambios por PR, así que el merge de main se hace con una PR que se mergea sola.
 on:
   push:
     branches: [main]
@@ -10,33 +11,42 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: develop
           fetch-depth: 0
-      - name: Merge de main en develop
+      - name: PR de main a develop
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          if git merge-base --is-ancestor origin/main HEAD; then
+          if git merge-base --is-ancestor origin/main origin/develop; then
             echo "develop ya contiene main" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          if ! git merge --no-edit -m "chore: sincronizar main en develop" origin/main; then
-            git merge --abort
-            {
-              echo "Conflictos al mergear main en develop. Resuélvelo a mano:"
-              echo '```'
-              echo "git switch -c sync/main-develop origin/develop && git merge origin/main"
-              echo '```'
-              echo "y abre una PR a develop."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          pr=$(gh pr list --base develop --head main --state open --json number -q '.[0].number')
+          if [[ -z "$pr" ]]; then
+            url=$(gh pr create --base develop --head main \
+              --title "chore: sincronizar main en develop" \
+              --body "Creada por el workflow \`sync-develop.yml\` tras un push a \`main\`.")
+            pr=${url##*/}
           fi
-          git push origin HEAD:develop
+          echo "PR #$pr" >> "$GITHUB_STEP_SUMMARY"
+          for _ in 1 2 3 4 5; do
+            if gh pr merge "$pr" --merge --subject "chore: sincronizar main en develop"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          {
+            echo "No se pudo mergear la PR #$pr, probablemente por conflictos. Resuélvelo a mano:"
+            echo '```'
+            echo "git switch -c sync/main-develop origin/develop && git merge origin/main"
+            echo '```'
+            echo "abre una PR a develop y cierra la #$pr."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

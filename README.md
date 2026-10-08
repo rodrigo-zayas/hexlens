@@ -83,7 +83,7 @@ Para otros lenguajes o arquitecturas hay dos puntos de extensión:
 
 - Se trabaja contra `develop` y se publica mergeando `develop` en `main`. Ninguna de las dos admite push directo, solo PR.
 - Mensajes de commit y títulos de PR en [conventional commits](https://www.conventionalcommits.org/es/). Al llegar a `main`, `feat` sube la versión minor, `fix` y `perf` la patch, y `tipo!:` o `BREAKING CHANGE` la major. El resto (`chore`, `docs`, `refactor`…) no publica release.
-- Cada push a `main` publica la release (`.github/workflows/release.yml`) y mergea `main` en `develop` (`sync-develop.yml`). Si hay conflictos, el workflow falla y hay que resolverlos con una PR a `develop`.
+- Cada push a `main` publica la release (`.github/workflows/release.yml`) y abre y mergea una PR de `main` a `develop` (`sync-develop.yml`). Si hay conflictos, el workflow falla y hay que resolverlos con una PR a `develop`.
 
 ## Investigación
 
