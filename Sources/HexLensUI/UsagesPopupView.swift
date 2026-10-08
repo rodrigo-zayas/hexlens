@@ -1,3 +1,4 @@
+import AppKit
 import HexLensCore
 import SwiftUI
 
@@ -6,6 +7,9 @@ struct UsagesPopupView: View {
   @EnvironmentObject var model: AppModel
   @State private var filter = ""
   @State private var query = ""
+  /// Desplazamiento arrastrando la cabecera; se mantiene entre aperturas.
+  @Binding var offset: CGSize
+  @State private var dragStart: CGSize?
   @State private var selection: UsageHit?
   @FocusState private var filterFocused: Bool
 
@@ -36,7 +40,23 @@ struct UsagesPopupView: View {
         else if !state.word.isEmpty {
           Text("\(flat.count) \(state.global ? "resultados" : "usos") en \(groups.count) ficheros").foregroundStyle(.secondary).font(.caption)
         }
-      }.padding(10)
+      }
+      .padding(10)
+      .contentShape(Rectangle())
+      .onContinuousHover { phase in
+        if case .active = phase { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
+      }
+      .gesture(
+        DragGesture(coordinateSpace: .global)
+          .onChanged { g in
+            let start = dragStart ?? offset
+            dragStart = start
+            offset = CGSize(width: start.width + g.translation.width, height: start.height + g.translation.height)
+            NSCursor.closedHand.set()
+          }
+          .onEnded { _ in dragStart = nil; NSCursor.openHand.set() }
+      )
+      .help("Arrastra para mover")
       if state.global {
         TextField("Texto a buscar en todo el repo (↩)", text: $query)
           .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
