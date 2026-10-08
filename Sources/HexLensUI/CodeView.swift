@@ -391,7 +391,12 @@ final class CodeNSTextView: NSTextView {
         }
       }
     }
-    drawGutter(rect)
+  }
+
+  // El margen se pinta encima del texto para que no se monte al desplazar en horizontal.
+  override func draw(_ dirtyRect: NSRect) {
+    super.draw(dirtyRect)
+    drawGutter(dirtyRect)
   }
 
   static let gutterWidth: CGFloat = 50
