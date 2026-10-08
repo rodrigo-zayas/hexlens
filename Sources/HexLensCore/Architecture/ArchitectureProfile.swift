@@ -42,9 +42,21 @@ public protocol ArchitectureProfile: Sendable {
   func violation(from: ArchInfo, fromPackage: String, importing fqn: String) -> (String, Violation.Severity)?
   /// Pieza de la PR que prueba `test`, si la hay. Por defecto casa `FooTest` con `Foo`.
   func testSubject(of test: CodeUnit, among units: [CodeUnit]) -> CodeUnit?
+  /// Dónde se coloca el visor al abrir un fichero sin línea concreta. Por defecto, en el primer cambio.
+  func opening(for unit: CodeUnit?) -> FileOpening
+}
+
+/// Posición inicial del visor al abrir un fichero (siempre desde la columna 0).
+public enum FileOpening: Sendable {
+  /// Primer bloque cambiado, o el principio si no hay cambios.
+  case firstChange
+  /// Principio del fichero.
+  case top
 }
 
 extension ArchitectureProfile {
+  public func opening(for unit: CodeUnit?) -> FileOpening { .firstChange }
+
   public func testSubject(of test: CodeUnit, among units: [CodeUnit]) -> CodeUnit? {
     guard let subject = ItxHexagonalProfile.testSubject(of: test.typeName) else { return nil }
     let candidates = units.filter { !$0.isTest && $0.typeName == subject }

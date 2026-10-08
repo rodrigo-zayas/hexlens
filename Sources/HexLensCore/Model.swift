@@ -167,6 +167,10 @@ public struct CodeUnit: Identifiable, Hashable, Codable, Sendable {
   public var fqn: String { packageName.isEmpty ? typeName : "\(packageName).\(typeName)" }
   public var fileName: String { (path as NSString).lastPathComponent }
   public var isCode: Bool { language != "other" }
+  /// Documentación (Markdown, AsciiDoc…): sale en el mapa en su propia zona aunque no sea código.
+  public var isDoc: Bool {
+    ["md", "markdown", "adoc", "asciidoc", "rst", "txt"].contains((path as NSString).pathExtension.lowercased())
+  }
 }
 
 public struct Dependency: Identifiable, Hashable, Codable, Sendable {

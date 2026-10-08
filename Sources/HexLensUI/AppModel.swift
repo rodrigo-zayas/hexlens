@@ -309,7 +309,7 @@ public final class AppModel: ObservableObject {
   // MARK: - Grafo visible
 
   public func isVisible(_ u: CodeUnit) -> Bool {
-    guard u.isCode else { return false }
+    guard u.isCode || (u.isDoc && !u.isGhost) else { return false }
     if u.isTest { return showTests && !u.isGhost }
     if u.isGhost {
       switch contextMode {
@@ -479,8 +479,13 @@ public final class AppModel: ObservableObject {
     }
 
     let isJava = path.hasSuffix(".java")
-    let tokens = isJava ? JavaLexer.tokens(document.text) : []
-    let semantics = JavaSemantics.analyze(text: document.text, tokens: tokens)
+    let isRuby = RubyLexer.isRuby(path)
+    func lex(_ text: String) -> ([Token], JavaSemantics) {
+      if isJava { let t = JavaLexer.tokens(text); return (t, JavaSemantics.analyze(text: text, tokens: t)) }
+      if isRuby { let t = RubyLexer.tokens(text); return (t, RubyLexer.semantics(text: text, tokens: t)) }
+      return ([], JavaSemantics())
+    }
+    let (tokens, semantics) = lex(document.text)
     let facts = (s.store.parsed(path, at: unit?.status == .deleted ? s.baseSHA : s.headSHA))?.facts ?? SourceFacts()
     let links = isJava
       ? CodeLinker.links(text: document.text, tokens: tokens, semantics: semantics, facts: facts, ownPath: path, index: s.index)
@@ -488,13 +493,13 @@ public final class AppModel: ObservableObject {
     let statics = Set(facts.imports.filter(\.isStatic).compactMap { $0.name.components(separatedBy: ".").last })
     let c = CodeContent(
       id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
-      outline: unit?.status != .deleted ? head.map { Outline.entries(path: path, source: $0) } ?? [] : [])
+      outline: unit?.status != .deleted ? head.map { Outline.entries(path: path, source: $0) } ?? [] : [], isJava: isJava)
     var baseContent: CodeContent?
     if let baseDocument {
-      let baseTokens = isJava ? JavaLexer.tokens(baseDocument.text) : []
+      let (baseTokens, baseSemantics) = lex(baseDocument.text)
       baseContent = CodeContent(
         id: "\(s.headSHA)|\(key)|base", document: baseDocument, tokens: baseTokens,
-        semantics: JavaSemantics.analyze(text: baseDocument.text, tokens: baseTokens), links: [], staticNames: statics)
+        semantics: baseSemantics, links: [], staticNames: statics, isJava: isJava)
     }
     contentCache[key] = (c, baseContent)
     return (c, baseContent)
@@ -506,7 +511,10 @@ public final class AppModel: ObservableObject {
     if let line = target.line {
       index = c.document.lines.firstIndex { ($0.newNumber ?? 0) >= line && $0.kind != .removed }
     } else {
-      index = c.document.changeIndices.first
+      switch session?.profile.opening(for: graph?.unit(target.path)) ?? .firstChange {
+      case .firstChange: index = c.document.changeIndices.first
+      case .top: index = 0
+      }
     }
     scrollSerial += 1
     scrollRequest = ScrollRequest(line: index ?? 0, serial: scrollSerial)

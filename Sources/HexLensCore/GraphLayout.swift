@@ -60,7 +60,7 @@ public struct GraphLayout: Sendable {
       neighbors[e.from, default: []].append(e.to)
       neighbors[e.to, default: []].append(e.from)
     }
-    let zoneOf = Dictionary(units.map { ($0.id, profile.zone(for: $0.archInfo).id) }, uniquingKeysWith: { a, _ in a })
+    let zoneOf = Dictionary(units.map { ($0.id, zone(of: $0, profile).id) }, uniquingKeysWith: { a, _ in a })
 
     var layout = place(zones, name: profile.name)
     for _ in 0..<6 {
@@ -88,10 +88,16 @@ public struct GraphLayout: Sendable {
     return layout
   }
 
+  static let docsZone = MapZone(id: "docs", title: "Documentación", order: 100, subtitle: "docs y specs")
+
+  static func zone(of u: CodeUnit, _ profile: ArchitectureProfile) -> MapZone {
+    !u.isCode && u.isDoc ? docsZone : profile.zone(for: u.archInfo)
+  }
+
   static func group(units: [CodeUnit], profile: ArchitectureProfile) -> [ZoneGroup] {
     var byZone: [String: (MapZone, [CodeUnit])] = [:]
     for u in units {
-      let z = profile.zone(for: u.archInfo)
+      let z = zone(of: u, profile)
       byZone[z.id, default: (z, [])].1.append(u)
     }
     let unitOrder: (CodeUnit, CodeUnit) -> Bool = {

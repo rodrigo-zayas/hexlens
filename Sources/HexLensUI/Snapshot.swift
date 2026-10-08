@@ -8,7 +8,7 @@ public enum Snapshot {
   public static func render(session: ReviewSession, context: ContextMode, showTests: Bool, to url: URL, selected: String? = nil) throws {
     let g = session.graph
     let units = g.units.filter { u in
-      guard u.isCode else { return false }
+      guard u.isCode || (u.isDoc && !u.isGhost) else { return false }
       if u.isTest { return showTests && !u.isGhost }
       if u.isGhost { return context == .all || (context == .key && u.isKeyContext) }
       return true
