@@ -53,6 +53,8 @@ struct DetailView: View {
               addNoteSerial: model.addNoteSerial,
               onAddNote: { model.beginNote(path: path, start: $0, end: $1) },
               onOpenNote: { model.editNote($0) },
+              findUsagesSerial: model.findUsagesSerial,
+              onFindUsages: { model.findUsages(of: $0) },
               onCursor: { model.cursorLine = $0 },
               onLink: { model.follow($0) },
               sync: model.baseContent(for: path) == nil ? nil : sync)
@@ -228,6 +230,7 @@ struct RelationsView: View {
             Text("\(files.count) ficheros nombran \(u.typeName)").foregroundStyle(.secondary).font(.caption)
           } else {
             Button("Buscar quién lo usa") { model.loadImpact(u.id) }.controlSize(.small)
+            Button("Buscar usos") { model.findUsages(of: u.typeName) }.controlSize(.small)
           }
         }
         if let files = model.impact[u.id] {

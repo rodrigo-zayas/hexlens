@@ -85,6 +85,8 @@ struct CodeTextView: NSViewRepresentable {
   var addNoteSerial = 0
   var onAddNote: (Int, Int) -> Void = { _, _ in }
   var onOpenNote: (UUID) -> Void = { _ in }
+  var findUsagesSerial = 0
+  var onFindUsages: (String) -> Void = { _ in }
   /// Línea del fichero nuevo bajo el cursor, para las migas.
   var onCursor: (Int?) -> Void = { _ in }
   let onLink: (CodeLink) -> Void
@@ -158,6 +160,12 @@ struct CodeTextView: NSViewRepresentable {
     c.onCursor = onCursor
     textView.onAddNote = onAddNote
     textView.onOpenNote = onOpenNote
+    textView.onFindUsages = onFindUsages
+    if findUsagesSerial != c.lastUsagesSerial {
+      let first = c.lastUsagesSerial == nil
+      c.lastUsagesSerial = findUsagesSerial
+      if !first { DispatchQueue.main.async { textView.findUsagesAtCursor() } }
+    }
     if textView.noteSpans != notes { textView.noteSpans = notes; textView.needsDisplay = true; container.strip.needsDisplay = true }
     container.scrollView.verticalRulerView?.needsDisplay = true
     if addNoteSerial != c.lastNoteSerial {
@@ -236,6 +244,7 @@ struct CodeTextView: NSViewRepresentable {
   }
 
   final class Coordinator: NSObject, NSTextViewDelegate {
+    var lastUsagesSerial: Int?
     var key = ""
     var links: [CodeLink] = []
     var lastScroll: ScrollRequest?
@@ -281,6 +290,7 @@ final class CodeNSTextView: NSTextView {
   var noteSpans: [NoteSpan] = []
   var onAddNote: (Int, Int) -> Void = { _, _ in }
   var onOpenNote: (UUID) -> Void = { _ in }
+  var onFindUsages: (String) -> Void = { _ in }
   var findMatches: [NSRange] = []
   var findCurrent: Int?
   private var indents: [Int] = []
@@ -467,6 +477,22 @@ final class CodeNSTextView: NSTextView {
     onAddNote(lo, hi)
   }
 
+  /// Identificador bajo el cursor (o la selección entera si es un identificador).
+  func identifierAtCursor() -> String? {
+    let sel = selectedRange()
+    let ns = string as NSString
+    guard let t = identifierTokens.first(where: { sel.length == 0 ? ($0.location <= sel.location && sel.location <= NSMaxRange($0)) : $0 == sel }),
+          NSMaxRange(t) <= ns.length else { return nil }
+    return ns.substring(with: t)
+  }
+
+  func findUsagesAtCursor() {
+    guard let w = identifierAtCursor() else { NSSound.beep(); return }
+    onFindUsages(w)
+  }
+
+  @objc private func findUsagesFromMenu(_ sender: Any?) { findUsagesAtCursor() }
+
   @objc private func addNoteFromMenu(_ sender: Any?) { addNoteAtSelection() }
 
   override func menu(for event: NSEvent) -> NSMenu? {
@@ -481,7 +507,10 @@ final class CodeNSTextView: NSTextView {
     item.keyEquivalentModifierMask = [.command, .option]
     item.target = self
     menu.insertItem(item, at: 0)
-    menu.insertItem(.separator(), at: 1)
+    let usesItem = NSMenuItem(title: "Buscar usos", action: #selector(findUsagesFromMenu(_:)), keyEquivalent: "")
+    usesItem.target = self
+    menu.insertItem(usesItem, at: 1)
+    menu.insertItem(.separator(), at: 2)
     return menu
   }
 

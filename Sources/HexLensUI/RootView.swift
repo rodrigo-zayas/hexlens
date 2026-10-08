@@ -33,6 +33,7 @@ public struct RootView: View {
     .toolbar { toolbar }
     .navigationTitle(model.repo?.name ?? "HexLens")
     .navigationSubtitle(model.session?.title ?? "")
+    .sheet(item: $model.usagePopup) { _ in UsagesPopupView().environmentObject(model) }
     .sheet(isPresented: $model.showPRPicker) { PRPickerView().environmentObject(model) }
     .sheet(item: $model.quickOpen) { QuickOpenView(mode: $0).environmentObject(model) }
     .overlay {
@@ -207,6 +208,8 @@ public struct ReviewCommands: Commands {
         .disabled(model.location == nil)
       Button("Buscar…") { model.showFind() }.keyboardShortcut("f").disabled(model.location == nil)
       Button("Buscar siguiente") { model.findNext() }.keyboardShortcut("g").disabled(model.location == nil)
+      Button("Buscar usos") { model.requestFindUsages() }
+        .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(NSF7FunctionKey)!)), modifiers: .option).disabled(model.location == nil)
       Button("Buscar anterior") { model.findPrevious() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(model.location == nil)
     }
     CommandMenu("Revisión") {
