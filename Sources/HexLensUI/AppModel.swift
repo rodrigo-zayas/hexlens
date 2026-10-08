@@ -8,16 +8,6 @@ public enum CenterMode: String, CaseIterable, Identifiable {
   public var title: String { self == .flows ? "Flujos" : "Mapa" }
 }
 
-public enum FlowSource: String, CaseIterable, Identifiable {
-  case agent, automatic
-  public var id: String { rawValue }
-  public var title: String { self == .agent ? "Claude" : "Automático" }
-}
-
-public enum AgentState: Equatable {
-  case idle, running(Date), done, failed(String)
-}
-
 /// Modelo de Claude por ID explícito, para saber siempre qué versión corre.
 public struct ClaudeModel: Hashable, Identifiable {
   /// "" = lo que tenga configurado el Claude Code del usuario.
@@ -71,10 +61,6 @@ public enum AppAppearance: String, CaseIterable, Identifiable {
   public var scheme: ColorScheme? { self == .dark ? .dark : self == .light ? .light : nil }
 }
 
-public enum ClaudeAuth: Equatable {
-  case unknown, checking, loggedIn(String?), loggedOut
-}
-
 /// Fichero (y línea) que enseña el visor de código.
 public struct CodeLocation: Hashable {
   public let path: String
@@ -125,14 +111,7 @@ public final class AppModel: ObservableObject {
   // Flujos
   @Published public private(set) var flows: [FlowNode]?
   @Published public var flowsOnlyChanges = true
-  @Published public var flowSource: FlowSource = .agent
 
-  // Agente
-  @Published public private(set) var agentState: AgentState = .idle
-  @Published public private(set) var agentLog: [String] = []
-  @Published public private(set) var agentReport: AgentReport?
-  @Published public private(set) var agentFlows: [VerifiedFlow] = []
-  @Published public private(set) var claudeAuth: ClaudeAuth = .unknown
   @Published public var claudeModelID = UserDefaults.standard.string(forKey: "claudeModelID") ?? "" {
     didSet { UserDefaults.standard.set(claudeModelID, forKey: "claudeModelID") }
   }
@@ -140,12 +119,6 @@ public final class AppModel: ObservableObject {
     ClaudeModel.catalog.first { $0.id == claudeModelID }
       ?? (claudeModelID.isEmpty ? .automatic : ClaudeModel(id: claudeModelID, name: claudeModelID, hint: ""))
   }
-  /// ID real del modelo que ha ejecutado (o está ejecutando) el agente, según el propio Claude Code.
-  @Published public private(set) var agentModelID: String?
-  private var authPoll: Task<Void, Never>?
-  /// Flujo resaltado en el mapa.
-  @Published public var activeFlow: Int?
-  private var agent: ClaudeAgent?
 
   public init() {}
 
@@ -257,12 +230,6 @@ public final class AppModel: ObservableObject {
     currentPR = pr
     impact = [:]
     flows = nil
-    cancelAgent()
-    agentState = .idle
-    agentLog = []
-    agentReport = nil
-    agentFlows = []
-    activeFlow = nil
     contentCache = [:]
     backStack = []
     forwardStack = []
@@ -271,12 +238,6 @@ public final class AppModel: ObservableObject {
     recomputeOrder()
     relayout()
     select(session.graph.entryPoint ?? order.first, recordHistory: false)
-    checkClaudeAuth()
-    if let data = try? Data(contentsOf: agentCacheURL(session)),
-      let cached = try? JSONDecoder().decode(CachedReport.self, from: data)
-    {
-      show(cached.report, model: cached.model)
-    }
   }
 
   private func fail(_ error: Error) {
@@ -482,72 +443,6 @@ public final class AppModel: ObservableObject {
     if let url = currentPR?.url.flatMap(URL.init(string:)) { NSWorkspace.shared.open(url) }
   }
 
-  // MARK: - Agente de flujos
-
-  /// Lanza Claude Code en segundo plano para describir los flujos de la PR.
-  public func runAgent() {
-    guard let s = session else { return }
-    cancelAgent()
-    agentLog = []
-    agentState = .running(Date())
-    let skeleton = flows
-    let agent = ClaudeAgent()
-    self.agent = agent
-    let head = s.headSHA
-    let model = claudeModelID
-    agentModelID = nil
-    Task.detached {
-      let prompt = AgentFlows.prompt(s, skeleton: skeleton ?? FlowBuilder.build(session: s))
-      agent.start(
-        prompt: prompt, schema: AgentFlows.schema, model: model, in: s.repo.root,
-        onEvent: { line in Task { @MainActor in self.agentLog.append(line) } },
-        onModel: { id in Task { @MainActor in self.agentModelID = id } },
-        onFinish: { result in
-          Task { @MainActor in
-            guard self.session?.headSHA == head else { return }
-            switch result {
-            case .success(let event):
-              if let report = AgentFlows.parse(resultEvent: event) {
-                try? FileManager.default.createDirectory(at: self.agentCacheURL(s).deletingLastPathComponent(), withIntermediateDirectories: true)
-                let used = AgentFlows.modelID(resultEvent: event) ?? self.agentModelID ?? model
-                try? JSONEncoder().encode(CachedReport(model: used, report: report)).write(to: self.agentCacheURL(s))
-                self.show(report, model: used)
-              } else {
-                self.agentState = .failed("Claude terminó pero su respuesta no tiene el formato esperado.")
-              }
-            case .failure(let error):
-              self.agentState = .failed(error.localizedDescription)
-              if error.localizedDescription.contains("authenticate") { self.claudeAuth = .loggedOut }
-            }
-          }
-        })
-    }
-  }
-
-  public func cancelAgent() {
-    agent?.cancel()
-    agent = nil
-    if case .running = agentState { agentState = .idle }
-  }
-
-  private func show(_ report: AgentReport, model: String?) {
-    guard let s = session else { return }
-    agentReport = report
-    agentModelID = model.flatMap { $0.isEmpty ? nil : $0 }
-    agentFlows = AgentFlows.verify(report, session: s)
-    agentState = .done
-  }
-
-  private struct CachedReport: Codable {
-    let model: String?
-    let report: AgentReport
-  }
-
-  private func agentCacheURL(_ s: ReviewSession) -> URL {
-    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("HexLens/agent-\(s.baseSHA.prefix(12))-\(s.headSHA).json")
-  }
-
   // MARK: - Claude
 
   public func explainPR() {
@@ -563,59 +458,6 @@ public final class AppModel: ObservableObject {
   public func explainFlow(_ flow: FlowNode) {
     guard let s = session else { return }
     launchClaude(ExplainPrompt.flow(s, flow: flow))
-  }
-
-  /// Seguir preguntando en Terminal sobre un flujo descrito por el agente.
-  public func askAbout(_ flow: VerifiedFlow) {
-    guard let s = session else { return }
-    let steps = flow.steps.map { String(repeating: "  ", count: $0.step.depth ?? 0) + "→ \($0.step.symbol) — \($0.step.what)" }
-    launchClaude("""
-      Quiero entender a fondo este flujo de la PR. Explícamelo paso a paso, conciso, señalando qué es nuevo y qué revisaría.
-
-      \(ExplainPrompt.context(s))
-
-      Flujo: \(flow.flow.title)\(flow.flow.trigger.map { " (\($0))" } ?? "")
-      \(flow.flow.summary)
-      \(steps.joined(separator: "\n"))
-      """)
-  }
-
-  /// Estado de la sesión de la CLI `claude`, la misma que usa el agente.
-  public func checkClaudeAuth() {
-    if claudeAuth == .unknown { claudeAuth = .checking }
-    Task.detached {
-      let state = Self.readClaudeAuth()
-      await MainActor.run { self.claudeAuth = state }
-    }
-  }
-
-  nonisolated static func readClaudeAuth() -> ClaudeAuth {
-    guard let out = try? Shell.run("zsh", ["-lc", "claude auth status"]),
-      let start = out.firstIndex(of: "{"), let end = out.lastIndex(of: "}"),
-      let json = try? JSONSerialization.jsonObject(with: Data(out[start...end].utf8)) as? [String: Any]
-    else { return .loggedOut }
-    guard json["loggedIn"] as? Bool == true else { return .loggedOut }
-    return .loggedIn((json["email"] ?? json["account"] ?? json["emailAddress"]) as? String)
-  }
-
-  /// Abre Terminal con `claude auth login` y, al detectar la sesión, lanza el agente.
-  public func loginClaude() {
-    do { try ClaudeLauncher.login() } catch { errorMessage = error.localizedDescription; return }
-    claudeAuth = .checking
-    authPoll?.cancel()
-    authPoll = Task {
-      for _ in 0..<200 {
-        try? await Task.sleep(for: .seconds(3))
-        if Task.isCancelled { return }
-        let state = await Task.detached { Self.readClaudeAuth() }.value
-        if case .loggedIn = state {
-          claudeAuth = state
-          if case .done = agentState {} else { runAgent() }
-          return
-        }
-      }
-      claudeAuth = .loggedOut
-    }
   }
 
   private func launchClaude(_ prompt: String) {

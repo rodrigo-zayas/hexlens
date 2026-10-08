@@ -49,21 +49,6 @@ enum SelfCapture {
       MainActor.assumeIsolated {
         let windows = NSApp.windows.filter { $0.isVisible && $0.contentView != nil && $0.frame.height > 200 }
         guard model.session != nil, model.busy == nil, model.flows != nil, let window = windows.first, let view = window.contentView?.superview else { return }
-        if ProcessInfo.processInfo.environment["HEXLENS_CAPTURE_AGENT"] != nil {
-          switch model.agentState {
-          case .idle:
-            FileHandle.standardError.write(Data("lanzando agente\n".utf8))
-            model.runAgent()
-            return
-          case .running:
-            return
-          case .failed(let m):
-            FileHandle.standardError.write(Data("agente falló: \(m)\n".utf8))
-          case .done:
-            FileHandle.standardError.write(Data("agente: \(model.agentFlows.count) flujos, \(model.agentFlows.flatMap(\.steps).filter { !$0.verified }.count) pasos sin verificar\n".utf8))
-          }
-          FileHandle.standardError.write(Data(model.agentLog.suffix(15).joined(separator: "\n").utf8 + Data("\n".utf8)))
-        }
         timer.invalidate()
         let env = ProcessInfo.processInfo.environment
         if let mode = env["HEXLENS_CAPTURE_MODE"], let m = CenterMode(rawValue: mode) { model.centerMode = m }

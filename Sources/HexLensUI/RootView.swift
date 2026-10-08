@@ -141,7 +141,6 @@ struct GraphPane: View {
             GraphCanvas(
               graph: graph, layout: model.layout, selectedID: model.selectedID, hoveredID: model.hoveredID,
               reviewed: model.reviewed,
-              highlight: model.activeFlow.flatMap { i in model.agentFlows.first { $0.id == i }?.files },
               onSelect: { model.select($0) }, onHover: { model.hoveredID = $0 })
               .scaleEffect(model.zoom, anchor: .topLeading)
               .frame(width: model.layout.size.width * model.zoom, height: model.layout.size.height * model.zoom, alignment: .topLeading)
