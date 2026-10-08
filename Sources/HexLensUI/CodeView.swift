@@ -187,6 +187,7 @@ struct CodeTextView: NSViewRepresentable {
       textView.computeIndents()
       textView.configureFolding(Self.foldRegions(for: content.document.lines, isJava: content.isJava))
       textView.indexIdentifiers(tokens: content.tokens)
+      textView.declarations = content.semantics.declarations
       c.reportCursor(textView)
       // Fichero nuevo entero: sin fondo verde, solo la barra del margen (como IntelliJ).
       textView.allAdded = !content.document.lines.isEmpty && content.document.lines.allSatisfy { $0.kind == .added }
@@ -306,6 +307,10 @@ final class CodeNSTextView: NSTextView {
   var onFindUsages: (String) -> Void = { _ in }
   var findMatches: [NSRange] = []
   var findCurrent: Int?
+  /// Nombres de métodos declarados: un clic simple abre sus usos.
+  var declarations: [NSRange] = [] {
+    didSet { window?.invalidateCursorRects(for: self) }
+  }
   private var indents: [Int] = []
   private var indentUnit = 2
   private var identifierIndex: [String: [NSRange]] = [:]
@@ -647,7 +652,42 @@ final class CodeNSTextView: NSTextView {
         return
       }
     }
+    let flags = event.modifierFlags.intersection([.shift, .option, .control])
+    if event.clickCount == 1, flags.isEmpty, let r = declarationRange(at: p) {
+      super.mouseDown(with: event)
+      let sel = selectedRange()
+      if sel.length == 0, sel.location >= r.location, sel.location <= NSMaxRange(r), NSMaxRange(r) <= (string as NSString).length {
+        onFindUsages((string as NSString).substring(with: r))
+      }
+      return
+    }
     super.mouseDown(with: event)
+  }
+
+  private func declarationRange(at p: NSPoint) -> NSRange? {
+    guard !declarations.isEmpty, let lm = layoutManager, let tc = textContainer else { return nil }
+    let o = textContainerOrigin
+    let pt = NSPoint(x: p.x - o.x, y: p.y - o.y)
+    var fraction: CGFloat = 0
+    let g = lm.glyphIndex(for: pt, in: tc, fractionOfDistanceThroughGlyph: &fraction)
+    let rect = lm.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: tc)
+    guard rect.contains(pt) else { return nil }
+    let c = lm.characterIndexForGlyph(at: g)
+    return declarations.first { c >= $0.location && c < NSMaxRange($0) }
+  }
+
+  override func resetCursorRects() {
+    super.resetCursorRects()
+    guard let lm = layoutManager, let tc = textContainer else { return }
+    let o = textContainerOrigin
+    let total = (string as NSString).length
+    for r in declarations where NSMaxRange(r) <= total {
+      let g = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+      var rect = lm.boundingRect(forGlyphRange: g, in: tc)
+      rect.origin.x += o.x
+      rect.origin.y += o.y
+      if rect.height > 0 && rect.intersects(visibleRect) { addCursorRect(rect, cursor: .pointingHand) }
+    }
   }
 
   // MARK: Notas

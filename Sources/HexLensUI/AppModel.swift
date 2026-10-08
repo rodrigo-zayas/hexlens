@@ -487,9 +487,10 @@ public final class AppModel: ObservableObject {
     }
     let (tokens, semantics) = lex(document.text)
     let facts = (s.store.parsed(path, at: unit?.status == .deleted ? s.baseSHA : s.headSHA))?.facts ?? SourceFacts()
-    let links = isJava
+    let links =
+      isJava
       ? CodeLinker.links(text: document.text, tokens: tokens, semantics: semantics, facts: facts, ownPath: path, index: s.index)
-      : []
+      : isRuby ? CodeLinker.rubyLinks(semantics: semantics, facts: facts, ownPath: path, index: s.index) : []
     let statics = Set(facts.imports.filter(\.isStatic).compactMap { $0.name.components(separatedBy: ".").last })
     let c = CodeContent(
       id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
@@ -566,11 +567,17 @@ public final class AppModel: ObservableObject {
   /// Busca `word` en todo el repo en la cabeza de la PR, en segundo plano.
   func findUsages(of word: String) {
     guard let s = session else { return }
+    let ruby = location.map { RubyLexer.isRuby($0.path) || $0.path.hasSuffix(".erb") } ?? false
+    let globs = ruby ? ["*.rb", "*.rake", "*.jbuilder", "*.erb"] : ["*.java"]
+    let declPattern =
+      ruby
+      ? "\\b(def\\s+(self\\.)?|class\\s+|module\\s+)" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+      : "\\b(class|interface|enum|record|@interface)\\s+" + NSRegularExpression.escapedPattern(for: word) + "\\b"
     usagePopup = UsagePopupState(word: word, groups: [], loading: true)
     let changed = Set(s.graph.changed.map(\.path))
-    let decl = try? NSRegularExpression(pattern: "\\b(class|interface|enum|record|@interface)\\s+" + NSRegularExpression.escapedPattern(for: word) + "\\b")
+    let decl = try? NSRegularExpression(pattern: declPattern)
     Task.detached {
-      let hits = s.repo.usages(of: word, at: s.headSHA).filter { h in
+      let hits = s.repo.usages(of: word, at: s.headSHA, globs: globs).filter { h in
         let r = NSRange(h.text.startIndex..., in: h.text)
         return decl?.firstMatch(in: h.text, range: r) == nil
       }
@@ -740,8 +747,9 @@ public final class AppModel: ObservableObject {
   public func loadImpact(_ id: String) {
     guard let s = session, let u = s.graph.unit(id) else { return }
     let changed = Set(s.graph.changed.map(\.path))
+    let globs = RubyLexer.isRuby(id) ? ["*.rb", "*.rake", "*.jbuilder", "*.erb"] : ["*.java"]
     Task.detached {
-      let files = s.repo.filesMentioning(u.typeName, at: s.headSHA).filter { !changed.contains($0) }
+      let files = s.repo.filesMentioning(u.typeName, at: s.headSHA, globs: globs).filter { !changed.contains($0) }
       await MainActor.run { self.impact[id] = files }
     }
   }
