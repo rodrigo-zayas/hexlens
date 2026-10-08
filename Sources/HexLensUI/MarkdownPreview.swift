@@ -6,7 +6,10 @@ struct MarkdownPreview: View {
   let text: String
   let path: String
   var changes: (additions: Int, deletions: Int)?
+  var diff: MarkdownDiff?
   var onShowChanges: () -> Void = {}
+  /// Abre el código en la línea de la cabeza (base 1) del bloque cambiado.
+  var onOpenLine: (Int) -> Void = { _ in }
   var onOpenPath: (String) -> Void = { _ in }
 
   @Environment(\.colorScheme) private var scheme
@@ -18,7 +21,7 @@ struct MarkdownPreview: View {
   }
 
   var content: some View {
-    let blocks = MarkdownBlocks.parse(text)
+    let rows = diffRows()
     return VStack(alignment: .leading, spacing: 0) {
         if let changes {
           HStack(spacing: 4) {
@@ -33,8 +36,14 @@ struct MarkdownPreview: View {
           .padding(.bottom, 20)
         }
         VStack(alignment: .leading, spacing: 14) {
-          ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-            blockView(block)
+          if diff?.isNewFile == true {
+            Label("Fichero nuevo", systemImage: "plus.circle.fill")
+              .font(Typo.secondary).foregroundStyle(.green)
+              .padding(.horizontal, 8).padding(.vertical, 3)
+              .background(Capsule().fill(Color.green.opacity(0.15)))
+          }
+          ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+            rowView(row)
           }
         }
       }
@@ -42,6 +51,61 @@ struct MarkdownPreview: View {
       .frame(maxWidth: 820, alignment: .leading)
       .padding(.horizontal, 32).padding(.vertical, 24)
       .frame(maxWidth: .infinity)
+  }
+
+  // MARK: - Diff
+
+  private enum Mark { case none, added, removed }
+  private struct Row { var block: MarkdownBlock; var mark: Mark; var line: Int }
+
+  /// Bloques de la cabeza marcados como añadidos, con los bloques eliminados intercalados donde estaban.
+  private func diffRows() -> [Row] {
+    let parsed = MarkdownBlocks.parseWithLines(text)
+    guard let diff, !diff.isNewFile else { return parsed.map { Row(block: $0.block, mark: .none, line: $0.lines.lowerBound + 1) } }
+    var rows: [Row] = []
+    var pending = diff.removals[...]
+    func flush(before anchor: Int?) {
+      while let r = pending.first, anchor.map({ r.anchor <= $0 }) ?? true {
+        pending = pending.dropFirst()
+        for b in MarkdownBlocks.parseWithLines(r.lines.joined(separator: "\n")) {
+          rows.append(Row(block: b.block, mark: .removed, line: r.anchor + 1))
+        }
+      }
+    }
+    for p in parsed {
+      flush(before: p.lines.lowerBound)
+      let isAdded = p.lines.contains { diff.added.contains($0 + 1) }
+      rows.append(Row(block: p.block, mark: isAdded ? .added : .none, line: p.lines.lowerBound + 1))
+    }
+    flush(before: nil)
+    return rows
+  }
+
+  @ViewBuilder
+  private func rowView(_ row: Row) -> some View {
+    switch row.mark {
+    case .none:
+      blockView(row.block)
+    case .added, .removed:
+      let color: Color = row.mark == .added ? .green : .red
+      HStack(alignment: .top, spacing: 0) {
+        Rectangle().fill(color).frame(width: 3)
+        blockView(row.block)
+          .opacity(row.mark == .removed ? 0.65 : 1)
+          .modifier(StrikeIf(on: row.mark == .removed))
+          .padding(.horizontal, 10).padding(.vertical, 6)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .background(color.opacity(0.08))
+      .contentShape(Rectangle())
+      .onTapGesture { onOpenLine(row.line) }
+      .help("Ver en el código")
+    }
+  }
+
+  private struct StrikeIf: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View { on ? AnyView(content.strikethrough()) : AnyView(content) }
   }
 
   // MARK: - Enlaces

@@ -63,7 +63,12 @@ struct DetailView: View {
       MarkdownPreview(
         text: source, path: path,
         changes: inPR ? unit.map { ($0.additions, $0.deletions) } : nil,
+        diff: inPR && !isDeleted ? unit.flatMap(session.diff(for:)).map { MarkdownDiff(diff: $0, isNewFile: unit?.status == .added) } : nil,
         onShowChanges: { markdownPreview = false },
+        onOpenLine: { line in
+          markdownPreview = false
+          model.go(to: CodeLocation(path: path, line: line))
+        },
         onOpenPath: { model.go(to: CodeLocation(path: $0, line: nil)) })
         .id(path)
     } else {
