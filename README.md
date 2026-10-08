@@ -1,4 +1,4 @@
-# HexLens
+# <img src="docs/logo.svg" width="48" align="center" alt=""> HexLens
 
 App nativa de macOS para revisar PRs de Java como un hexágono. Cada fichero de la PR se coloca en su capa (entrada, aplicación, dominio, salida), agrupado por paquete y unido a lo que usa. Al pulsar un nodo se ve su diff, qué métodos cambian y con quién se relaciona.
 
@@ -26,6 +26,7 @@ GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexago
 ```bash
 ./scripts/build-app.sh            # dist/HexLens.app y dist/hexlens
 ./scripts/build-app.sh --install  # además la copia a /Applications
+./scripts/make-icon.sh            # regenera Resources/AppIcon.icns desde docs/logo.svg
 ```
 
 En la app: `⌘O` abre un repo, `⌘P` elige PR (pedidas a mí, abiertas, mías, por número o comparando dos refs). Navegación: `⌘]` / `⌘[` siguiente o anterior en el orden de lectura, `⌘⇧]` siguiente sin revisar, `⌘D` marcar revisado.

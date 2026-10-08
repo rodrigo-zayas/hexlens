@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1F2937"/>
+      <stop offset="1" stop-color="#0B0F17"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.35" r="0.85">
+      <stop offset="0" stop-color="#1B2638"/>
+      <stop offset="1" stop-color="#0D131F"/>
+    </radialGradient>
+    <clipPath id="lens"><polygon points="512,212 771.8,362 771.8,662 512,812 252.2,662 252.2,362"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <polygon points="512,212 771.8,362 771.8,662 512,812 252.2,662 252.2,362" fill="url(#glass)"/>
+  <g clip-path="url(#lens)" fill="none" stroke="#64748B" stroke-width="11" stroke-linecap="round">
+    <path d="M345,450 C400,450 400,380 455,380"/>
+    <path d="M345,450 C400,450 400,512 455,512"/>
+    <path d="M345,580 C400,580 400,512 455,512"/>
+    <path d="M345,580 C400,580 400,640 455,640"/>
+    <path d="M455,380 C512,380 512,450 569,450"/>
+    <path d="M455,512 C512,512 512,450 569,450"/>
+    <path d="M455,640 C512,640 512,580 569,580"/>
+    <path d="M569,450 C624,450 624,420 679,420"/>
+    <path d="M569,450 C624,450 624,600 679,600"/>
+    <path d="M569,580 C624,580 624,600 679,600"/>
+  </g>
+  <g>
+    <g transform="translate(345,450)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#337AEB"/></g>
+    <g transform="translate(345,580)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#337AEB"/></g>
+    <g transform="translate(455,380)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#299E66"/></g>
+    <g transform="translate(455,512)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#299E66"/></g>
+    <g transform="translate(455,640)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#299E66"/></g>
+    <g transform="translate(569,450)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#DB851A"/></g>
+    <g transform="translate(569,580)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#DB851A"/></g>
+    <g transform="translate(679,420)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#8C54D9"/></g>
+    <g transform="translate(679,600)"><polygon points="0,-32 27.7,-16 27.7,16 0,32 -27.7,16 -27.7,-16" fill="#8C54D9"/></g>
+  </g>
+  <path d="M300,330 Q400,262 470,240" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="16" stroke-linecap="round"/>
+  <polygon points="512,212 771.8,362 771.8,662 512,812 252.2,662 252.2,362" fill="none" stroke="#E5E7EB" stroke-width="40" stroke-linejoin="round"/>
+</svg>
