@@ -1,0 +1,43 @@
+README.md
+  s_508ce9e3002be3::t_914a9259c551a0 7-11,20-22,82-83
+Sources/HexLensCore/Architecture/ArchitectureProfile.swift
+  s_508ce9e3002be3::t_0de675b7db54f8 10-26,32,34-39,51,53-103,139-141,168-170
+Sources/HexLensCore/Architecture/GenericProfiles.swift
+  s_508ce9e3002be3::t_4c73fcf381c3f3 1-120
+Sources/HexLensCore/Graph.swift
+  s_508ce9e3002be3::t_476f992be0c323 205,240
+Sources/HexLensCore/GraphLayout.swift
+  s_508ce9e3002be3::t_cb91a0f1c5ba82 4-5,7-9,11,14,16-17,20-21,25-27,34-43,46-48,50-52,59,61,65,68-77,80,85-118,120-124,126,128-155,157-161,164,167-173
+Sources/HexLensCore/Model.swift
+  s_508ce9e3002be3::t_705e77a8fe33a5 154,216-221
+Sources/HexLensCore/ReviewLoader.swift
+  s_508ce9e3002be3::t_9971364483d737 26,37-38,65
+Sources/HexLensUI/AppModel.swift
+  s_508ce9e3002be3::t_2f09e0570022ae 108-112,301,329-331
+Sources/HexLensUI/GraphCanvas.swift
+  s_508ce9e3002be3::t_a644ab55808f70 4,13,18,20,30-47,68-82,84-86,89-107,111-112,137-138,175-176,205,208-226,237-239
+Sources/HexLensUI/MapScrollView.swift
+  s_508ce9e3002be3::t_22799b4a09c436 1-171
+Sources/HexLensUI/RootView.swift
+  s_508ce9e3002be3::t_cad9f08c8c1810 128,132-141,143-147,149-150,218-219,221
+Sources/HexLensUI/Snapshot.swift
+  s_508ce9e3002be3::t_b1de24eb0201ba 17
+Tests/HexLensCoreTests/ProfileTests.swift
+  s_508ce9e3002be3::t_02a3b0a829f209 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da77834b7417093f5d93a41a5a57760a6c2f92fc",
+  "prompts": {},
+  "sessions": {
+    "s_508ce9e3002be3": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d1bc3fac-7c66-43d1-a09f-1cc89e52c9f5",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
