@@ -122,6 +122,12 @@ public struct GitRepo: Sendable, Hashable {
     }
   }
 
+  /// Usos de `word` (palabra completa) en los .java de `rev`.
+  public func usages(of word: String, at rev: String) -> [UsageHit] {
+    guard let out = try? git(["grep", "-n", "-w", "-F", "-e", word, rev, "--", "*.java"]) else { return [] }
+    return UsageSearch.parse(out, rev: rev)
+  }
+
   public func branches() -> [String] {
     let out = (try? git(["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"])) ?? ""
     return out.split(separator: "\n").map(String.init).filter { !$0.hasSuffix("/HEAD") }

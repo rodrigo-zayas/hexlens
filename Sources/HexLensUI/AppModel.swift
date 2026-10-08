@@ -76,6 +76,14 @@ struct QuickOpenEntry: Identifiable {
   var id: String { "\(path)#\(line ?? 0)#\(name)" }
 }
 
+struct UsagePopupState: Equatable, Identifiable {
+  var word: String
+  var id: String { word }
+  var groups: [UsageGroup]
+  var loading: Bool
+  var changed: Set<String> = []
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
   @Published public private(set) var repo: GitRepo?
@@ -127,6 +135,8 @@ public final class AppModel: ObservableObject {
   @Published public private(set) var notes: [ReviewNote] = []
   @Published var noteDraft: NoteDraft?
   @Published private(set) var addNoteSerial = 0
+  @Published private(set) var findUsagesSerial = 0
+  @Published var usagePopup: UsagePopupState?
   private var noteStore: ReviewNoteStore?
   /// Sesiones de Claude detectadas para la rama de la PR y la enlazada (`nil` = ninguna / nueva).
   @Published public private(set) var claudeSessions: [ClaudeSession] = []
@@ -534,6 +544,30 @@ public final class AppModel: ObservableObject {
   }
 
   func notes(in path: String) -> [ReviewNote] { notes.filter { $0.path == path } }
+
+  public func requestFindUsages() {
+    guard location != nil else { return }
+    findUsagesSerial += 1
+  }
+
+  /// Busca `word` en todo el repo en la cabeza de la PR, en segundo plano.
+  func findUsages(of word: String) {
+    guard let s = session else { return }
+    usagePopup = UsagePopupState(word: word, groups: [], loading: true)
+    let changed = Set(s.graph.changed.map(\.path))
+    let decl = try? NSRegularExpression(pattern: "\\b(class|interface|enum|record|@interface)\\s+" + NSRegularExpression.escapedPattern(for: word) + "\\b")
+    Task.detached {
+      let hits = s.repo.usages(of: word, at: s.headSHA).filter { h in
+        let r = NSRange(h.text.startIndex..., in: h.text)
+        return decl?.firstMatch(in: h.text, range: r) == nil
+      }
+      let groups = UsageSearch.group(hits)
+      await MainActor.run {
+        guard self.usagePopup?.word == word else { return }
+        self.usagePopup = UsagePopupState(word: word, groups: groups, loading: false, changed: changed)
+      }
+    }
+  }
 
   public func requestAddNote() {
     guard location != nil else { return }
