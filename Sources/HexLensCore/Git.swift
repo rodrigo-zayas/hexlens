@@ -114,8 +114,8 @@ public struct GitRepo: Sendable, Hashable {
   }
 
   /// Ficheros Java en `rev` que mencionan `word` como palabra completa.
-  public func filesMentioning(_ word: String, at rev: String) -> [String] {
-    guard let out = try? git(["grep", "-l", "-w", "-F", "-e", word, rev, "--", "*.java"]) else { return [] }
+  public func filesMentioning(_ word: String, at rev: String, globs: [String] = ["*.java"]) -> [String] {
+    guard let out = try? git(["grep", "-l", "-w", "-F", "-e", word, rev, "--"] + globs) else { return [] }
     return out.split(separator: "\n").map { line in
       let s = String(line)
       return s.hasPrefix(rev + ":") ? String(s.dropFirst(rev.count + 1)) : s
@@ -123,8 +123,8 @@ public struct GitRepo: Sendable, Hashable {
   }
 
   /// Usos de `word` (palabra completa) en los .java de `rev`.
-  public func usages(of word: String, at rev: String) -> [UsageHit] {
-    guard let out = try? git(["grep", "-n", "-w", "-F", "-e", word, rev, "--", "*.java"]) else { return [] }
+  public func usages(of word: String, at rev: String, globs: [String] = ["*.java"]) -> [UsageHit] {
+    guard let out = try? git(["grep", "-n", "-w", "-F", "-e", word, rev, "--"] + globs) else { return [] }
     return UsageSearch.parse(out, rev: rev)
   }
 

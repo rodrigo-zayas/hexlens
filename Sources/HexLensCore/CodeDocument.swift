@@ -132,4 +132,38 @@ public enum CodeLinker {
     }
     return out
   }
+
+  /// Enlaces de un fichero Ruby: constantes del repo (Zeitwerk) y llamadas `Const.metodo` o a métodos propios.
+  public static func rubyLinks(
+    semantics: JavaSemantics, facts: SourceFacts, ownPath: String, index: RepoIndex
+  ) -> [(NSRange, CodeLink)] {
+    var out: [(NSRange, CodeLink)] = []
+    var cache: [String: String?] = [:]
+    let namespace = facts.packageName.isEmpty ? [] : facts.packageName.components(separatedBy: ".")
+    func resolve(_ chain: String) -> String? {
+      if let c = cache[chain] { return c }
+      var found: String?
+      for k in stride(from: namespace.count, through: 0, by: -1) {
+        let fqn = (Array(namespace.prefix(k)) + [chain]).joined(separator: ".")
+        if let p = index.pathByFQN[fqn] ?? index.enclosing(fqn) { found = p; break }
+      }
+      if found == nil, let last = chain.components(separatedBy: ".").last, let ps = index.pathsBySimpleName[last], ps.count == 1 {
+        found = ps[0]
+      }
+      cache[chain] = .some(found)
+      return found
+    }
+    let own = Set(facts.members.map(\.name))
+    for ref in semantics.typeRefs {
+      if let p = resolve(ref.name), p != ownPath { out.append((ref.range, .type(path: p))) }
+    }
+    for call in semantics.calls {
+      if let r = call.receiver {
+        if r.first?.isUppercase == true, let p = resolve(r) { out.append((call.nameRange, .member(path: p, name: call.name))) }
+      } else if own.contains(call.name) {
+        out.append((call.nameRange, .member(path: ownPath, name: call.name)))
+      }
+    }
+    return out
+  }
 }

@@ -185,21 +185,98 @@ public enum RubyLexer {
     return out
   }
 
-  /// Semántica mínima para el coloreado: nombres tras `def` como declaraciones y variables
-  /// `@x`/`@@x`/`$x` como campos.
+  /// Semántica para coloreado y navegación: declaraciones (`def`), variables `@x`/`@@x`/`$x` como campos,
+  /// constantes (`A::B::C` → `A.B.C`) como `typeRefs` y llamadas (`X.metodo`, `metodo` propio) como `calls`.
   public static func semantics(text: String, tokens: [Token]) -> JavaSemantics {
     let ns = text as NSString
     var sem = JavaSemantics()
+    let sig = tokens.filter { $0.kind != .comment }
+    func str(_ i: Int) -> String { i >= 0 && i < sig.count ? ns.substring(with: sig[i].range) : "" }
+    func isConst(_ i: Int) -> Bool {
+      i >= 0 && i < sig.count && sig[i].kind == .identifier && str(i).first?.isUppercase == true
+    }
+    func isColons(_ i: Int) -> Bool {
+      i + 1 < sig.count && sig[i].kind == .punct && str(i) == ":" && sig[i + 1].kind == .punct && str(i + 1) == ":"
+        && sig[i + 1].range.location == NSMaxRange(sig[i].range)
+    }
+    var lineStarts = [0]
+    for (i, u) in text.utf16.enumerated() where u == 10 { lineStarts.append(i + 1) }
+    func line(_ offset: Int) -> Int {
+      var lo = 0, hi = lineStarts.count - 1
+      while lo < hi {
+        let mid = (lo + hi + 1) / 2
+        if lineStarts[mid] <= offset { lo = mid } else { hi = mid - 1 }
+      }
+      return lo + 1
+    }
+
+    // Pasada 1: declaraciones y campos.
     var afterDef = false
-    for (k, t) in tokens.enumerated() {
-      let w = ns.substring(with: t.range)
+    var declared = Set<Int>()
+    var methodNames = Set<String>()
+    for k in sig.indices {
+      let t = sig[k]
+      let w = str(k)
       if t.kind == .identifier, let f = w.first, f == "@" || f == "$" { sem.fields.insert(w) }
       if t.kind == .keyword && w == "def" { afterDef = true; continue }
       guard afterDef else { continue }
-      // def self.nombre → saltar `self` y `.`
       if (t.kind == .keyword && w == "self") || (t.kind == .punct && w == ".") { continue }
       afterDef = false
-      if t.kind == .identifier || t.kind == .keyword, k > 0 { sem.declarations.append(t.range) }
+      if t.kind == .identifier || t.kind == .keyword, k > 0 {
+        sem.declarations.append(t.range)
+        declared.insert(k)
+        methodNames.insert(w)
+      }
+    }
+
+    // Pasada 2: constantes y llamadas.
+    var k = 0
+    while k < sig.count {
+      let t = sig[k]
+      let prev = str(k - 1)
+      let prevKind = k > 0 ? sig[k - 1].kind : .punct
+      if isConst(k), !(prevKind == .punct && prev == "."), !(prevKind == .keyword && (prev == "class" || prev == "module")) {
+        var parts = [str(k)]
+        var end = k
+        while isColons(end + 1), isConst(end + 3) {
+          end += 3
+          parts.append(str(end))
+        }
+        let isDecl = k >= 2 && isColons(k - 2) && k >= 3 && sig[k - 3].kind == .keyword
+          && (str(k - 3) == "class" || str(k - 3) == "module")
+        if !isDecl {
+          let range = NSRange(location: t.range.location, length: NSMaxRange(sig[end].range) - t.range.location)
+          sem.typeRefs.append((parts.joined(separator: "."), range))
+        }
+        k = end + 1
+        continue
+      }
+      if t.kind == .identifier, let f = str(k).first, f != "@", f != "$", !f.isUppercase, !declared.contains(k) {
+        let name = str(k)
+        if prevKind == .punct, prev == "." {
+          // Receptor: constante (cadena `A::B`), identificador o variable; `self` equivale a sin receptor.
+          var receiver: String?
+          var p = k - 2
+          if p >= 0, sig[p].kind == .punct, str(p) == "&" { p -= 1 }
+          if p >= 0, sig[p].kind == .keyword, str(p) == "self" {
+            if methodNames.contains(name) { sem.calls.append(.init(name: name, nameRange: t.range, receiver: nil, line: line(t.range.location))) }
+          } else {
+            if p >= 0, sig[p].kind == .identifier {
+              var parts = [str(p)]
+              if isConst(p) {
+                while p >= 3, isColons(p - 2), isConst(p - 3) { p -= 3; parts.insert(str(p), at: 0) }
+              }
+              receiver = parts.joined(separator: ".")
+            }
+            if let receiver {
+              sem.calls.append(.init(name: name, nameRange: t.range, receiver: receiver, line: line(t.range.location)))
+            }
+          }
+        } else if methodNames.contains(name), !(prevKind == .keyword && prev == "def") {
+          sem.calls.append(.init(name: name, nameRange: t.range, receiver: nil, line: line(t.range.location)))
+        }
+      }
+      k += 1
     }
     return sem
   }

@@ -231,3 +231,60 @@ final class RubyLexerTests: XCTestCase {
     XCTAssertEqual(sem.declarations.map { ns.substring(with: $0) }, ["call"])
   }
 }
+
+final class RubyNavigationTests: XCTestCase {
+  private let path = "app/controllers/dam/v1/cards_controller.rb"
+  private let source = """
+    module Dam
+      module V1
+        class CardsController < ApplicationController
+          def create
+            Flow::Look::AddCardService.call(params)
+            Helper.run
+            @repo.save
+            audit(card)
+          end
+
+          def audit(card)
+            card.touch
+          end
+        end
+      end
+    end
+    """
+
+  private func index() -> RepoIndex {
+    RepoIndex(
+      paths: [
+        "app/services/flow/look/add_card_service.rb", "app/services/helper.rb",
+        "app/controllers/dam/v1/cards_controller.rb", "app/controllers/application_controller.rb",
+      ], analyzers: [RubyAnalyzer()])
+  }
+
+  func testSemantics() {
+    let t = RubyLexer.tokens(source)
+    let s = RubyLexer.semantics(text: source, tokens: t)
+    XCTAssertTrue(s.typeRefs.contains { $0.name == "Flow.Look.AddCardService" })
+    XCTAssertTrue(s.typeRefs.contains { $0.name == "ApplicationController" })
+    XCTAssertFalse(s.typeRefs.contains { $0.name == "CardsController" || $0.name == "Dam" })
+    XCTAssertTrue(s.calls.contains { $0.name == "call" && $0.receiver == "Flow.Look.AddCardService" })
+    XCTAssertTrue(s.calls.contains { $0.name == "save" && $0.receiver == "@repo" })
+    XCTAssertTrue(s.calls.contains { $0.name == "audit" && $0.receiver == nil })
+    XCTAssertEqual(s.declarations.count, 2)
+  }
+
+  func testLinks() {
+    let t = RubyLexer.tokens(source)
+    let s = RubyLexer.semantics(text: source, tokens: t)
+    let facts = RubyAnalyzer().analyze(path: path, source: source)
+    let links = CodeLinker.rubyLinks(semantics: s, facts: facts, ownPath: path, index: index()).map(\.1)
+    let svc = "app/services/flow/look/add_card_service.rb"
+    XCTAssertTrue(links.contains(.type(path: svc)))
+    XCTAssertTrue(links.contains(.member(path: svc, name: "call")))
+    XCTAssertTrue(links.contains(.member(path: "app/services/helper.rb", name: "run")))
+    XCTAssertTrue(links.contains(.member(path: path, name: "audit")))
+    XCTAssertTrue(links.contains(.type(path: "app/controllers/application_controller.rb")))
+    XCTAssertFalse(links.contains(.member(path: path, name: "save")))
+    XCTAssertFalse(links.contains(.type(path: path)))
+  }
+}
