@@ -112,6 +112,10 @@ public final class AppModel: ObservableObject {
   @Published var noteDraft: NoteDraft?
   @Published private(set) var addNoteSerial = 0
   private var noteStore: ReviewNoteStore?
+  /// Sesiones de Claude detectadas para la rama de la PR y la enlazada (`nil` = ninguna / nueva).
+  @Published public private(set) var claudeSessions: [ClaudeSession] = []
+  @Published public private(set) var linkedSessionID: String?
+  private var branchName: String?
 
   @Published var findVisible = false
   @Published var findQuery = ""
@@ -265,6 +269,7 @@ public final class AppModel: ObservableObject {
     forwardStack = []
     reviewed = Set(UserDefaults.standard.stringArray(forKey: reviewKey) ?? [])
     loadNotes(for: session, pr: pr)
+    detectClaudeSessions(for: session, pr: pr)
     busy = nil
     recomputeOrder()
     relayout()
@@ -509,6 +514,42 @@ public final class AppModel: ObservableObject {
   public func goToNote(_ id: UUID) {
     guard let n = notes.first(where: { $0.id == id }) else { return }
     go(to: CodeLocation(path: n.path, line: n.startLine))
+  }
+
+  // MARK: - Sesión de Claude
+
+  private func linkKey(_ s: ReviewSession, _ branch: String) -> String { "claudeSession:\(s.repo.root.path):\(branch)" }
+
+  /// Busca las sesiones de Claude de la rama (en el repo y en sus worktrees) y aplica el enlace guardado o la más reciente.
+  private func detectClaudeSessions(for s: ReviewSession, pr: PullRequestSummary?) {
+    let branch = pr?.headRefName ?? s.headRef
+    branchName = branch
+    claudeSessions = []
+    linkedSessionID = nil
+    let repo = s.repo
+    let key = linkKey(s, branch)
+    Task.detached {
+      let cwds = [repo.root.path] + repo.worktrees().map(\.path)
+      let found = ClaudeSessions.find(cwds: cwds, branch: branch)
+      await MainActor.run {
+        guard self.session?.headSHA == s.headSHA else { return }
+        self.claudeSessions = found
+        let saved = UserDefaults.standard.string(forKey: key)
+        // Cadena vacía = el usuario quitó el enlace a propósito: no autoseleccionar.
+        if saved == "" { self.linkedSessionID = nil }
+        else { self.linkedSessionID = saved ?? found.first?.id }
+      }
+    }
+  }
+
+  var linkedSession: ClaudeSession? { claudeSessions.first { $0.id == linkedSessionID } }
+
+  /// Enlaza la rama con una sesión; `nil` quita el enlace y el envío abrirá una sesión nueva.
+  func linkSession(_ id: String?) {
+    guard let s = session, let branch = branchName else { return }
+    linkedSessionID = id
+    let key = linkKey(s, branch)
+    if let id { UserDefaults.standard.set(id, forKey: key) } else { UserDefaults.standard.set("", forKey: key) }
   }
 
   // MARK: - Revisión

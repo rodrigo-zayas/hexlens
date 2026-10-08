@@ -55,7 +55,7 @@ struct SidebarView: View {
         .padding(.vertical, 4)
         .selectionDisabled()
 
-        if !model.notes.isEmpty { NotesSection().selectionDisabled() }
+        if !model.notes.isEmpty || !model.claudeSessions.isEmpty { NotesSection().selectionDisabled() }
 
         let numbers = Dictionary(model.order.enumerated().map { ($1, $0 + 1) }, uniquingKeysWith: { a, _ in a })
         ForEach(sections) { section in
@@ -132,6 +132,7 @@ private struct NotesSection: View {
 
   var body: some View {
     DisclosureGroup(isExpanded: $expanded) {
+      ClaudeSessionRow()
       ForEach(model.notes) { n in
         Button { model.goToNote(n.id) } label: {
           VStack(alignment: .leading, spacing: 1) {
@@ -152,5 +153,39 @@ private struct NotesSection: View {
     } label: {
       Label("Notas (\(model.notes.count))", systemImage: "note.text").font(.subheadline.weight(.semibold))
     }
+  }
+}
+
+/// Sesión de Claude enlazada a la rama: título y antigüedad, con menú para cambiarla.
+private struct ClaudeSessionRow: View {
+  @EnvironmentObject var model: AppModel
+
+  var body: some View {
+    Menu {
+      ForEach(model.claudeSessions) { s in
+        Button { model.linkSession(s.id) } label: {
+          Text("\(s.id == model.linkedSessionID ? "✓ " : "")\(s.title) · \(Self.ago(s.lastActivity))")
+        }
+      }
+      if !model.claudeSessions.isEmpty { Divider() }
+      Button("Nueva sesión") { model.linkSession(nil) }
+      Button("Quitar enlace") { model.linkSession(nil) }.disabled(model.linkedSessionID == nil)
+    } label: {
+      if let s = model.linkedSession {
+        Text("Sesión de Claude: \(s.title) · \(Self.ago(s.lastActivity))").lineLimit(1)
+      } else {
+        Text("Sesión de Claude: nueva")
+      }
+    }
+    .menuStyle(.borderlessButton)
+    .font(.system(size: 11))
+    .foregroundStyle(.secondary)
+  }
+
+  static func ago(_ d: Date) -> String {
+    let f = RelativeDateTimeFormatter()
+    f.locale = Locale(identifier: "es")
+    f.unitsStyle = .short
+    return f.localizedString(for: d, relativeTo: Date())
   }
 }
