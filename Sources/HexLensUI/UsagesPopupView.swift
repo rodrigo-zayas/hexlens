@@ -46,11 +46,12 @@ struct UsagesPopupView: View {
           .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
           .padding(.horizontal, 10).padding(.bottom, 8)
           .focused($filterFocused)
-          .onSubmit { model.searchRepo(query) }
+          .modifier(keys)
       } else {
         TextField("Filtrar", text: $filter)
           .textFieldStyle(.roundedBorder).padding(.horizontal, 10).padding(.bottom, 8)
           .focused($filterFocused)
+          .modifier(keys)
       }
       Divider()
       ScrollViewReader { proxy in
@@ -81,13 +82,7 @@ struct UsagesPopupView: View {
     .onAppear { query = state.word; filterFocused = true; selection = flat.first }
     .onChange(of: filter) { _, _ in selection = flat.first }
     .onChange(of: state.groups) { _, _ in selection = flat.first }
-    .onKeyPress(.downArrow) { move(1); return .handled }
-    .onKeyPress(.upArrow) { move(-1); return .handled }
-    .onKeyPress(.return) {
-      if state.global, query != state.word { model.searchRepo(query) } else if let s = selection { open(s) }
-      return .handled
-    }
-    .onKeyPress(.escape) { model.usagePopup = nil; return .handled }
+    .modifier(keys)
   }
 
   private func header(_ g: UsageGroup) -> some View {
@@ -121,6 +116,16 @@ struct UsagesPopupView: View {
       from = r.upperBound
     }
     return a
+  }
+
+  /// Teclado como en el IDE: ↑/↓ recorren resultados (también desde el campo), ⇞/⇟ saltan 10, ↩ abre, Esc cierra.
+  private var keys: PopupKeys {
+    PopupKeys(
+      move: move,
+      submit: {
+        if state.global, query != state.word { model.searchRepo(query) } else if let s = selection { open(s) }
+      },
+      close: { model.usagePopup = nil })
   }
 
   private func move(_ d: Int) {
@@ -176,4 +181,20 @@ struct FloatingPopup<Content: View>: View {
 @MainActor enum FloatingPopupPosition {
   static var saved = CGSize.zero
   static let handleHeight: CGFloat = 40
+}
+
+private struct PopupKeys: ViewModifier {
+  let move: (Int) -> Void
+  let submit: () -> Void
+  let close: () -> Void
+
+  func body(content: Content) -> some View {
+    content
+      .onKeyPress(.downArrow) { move(1); return .handled }
+      .onKeyPress(.upArrow) { move(-1); return .handled }
+      .onKeyPress(.pageDown) { move(10); return .handled }
+      .onKeyPress(.pageUp) { move(-10); return .handled }
+      .onKeyPress(.return) { submit(); return .handled }
+      .onKeyPress(.escape) { close(); return .handled }
+  }
 }
