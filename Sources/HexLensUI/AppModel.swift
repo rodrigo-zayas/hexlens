@@ -106,6 +106,9 @@ public final class AppModel: ObservableObject {
   @Published public var fullFile = true
   @Published private(set) var scrollRequest: ScrollRequest?
   private var scrollSerial = 0
+  /// Línea del fichero nuevo bajo el cursor del visor (para las migas).
+  @Published var cursorLine: Int?
+  @Published var showStructure = false
 
   // Búsqueda en el visor (⌘F)
   @Published public private(set) var notes: [ReviewNote] = []
@@ -415,7 +418,8 @@ public final class AppModel: ObservableObject {
       : []
     let statics = Set(facts.imports.filter(\.isStatic).compactMap { $0.name.components(separatedBy: ".").last })
     let c = CodeContent(
-      id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics)
+      id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
+      outline: isJava && unit?.status != .deleted ? head.map(Outline.java) ?? [] : [])
     contentCache[key] = c
     return c
   }

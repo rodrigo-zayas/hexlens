@@ -19,6 +19,7 @@ struct DetailView: View {
           if let content = model.content(for: location.path) {
             if model.findVisible { FindBar() }
             let matches = model.findMatches
+            Breadcrumbs(path: location.path, content: content, changed: unit?.members ?? [])
             CodeTextView(
               content: content, scroll: model.scrollRequest, matches: matches,
               currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1),
@@ -26,6 +27,7 @@ struct DetailView: View {
               addNoteSerial: model.addNoteSerial,
               onAddNote: { model.beginNote(path: location.path, start: $0, end: $1) },
               onOpenNote: { model.editNote($0) },
+              onCursor: { model.cursorLine = $0 },
               onLink: { model.follow($0) })
           } else {
             ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
@@ -39,6 +41,11 @@ struct DetailView: View {
         }
       }
       .sheet(item: $model.noteDraft) { _ in NoteEditor() }
+      .sheet(isPresented: $model.showStructure) {
+        if let content = model.content(for: location.path) {
+          StructurePopup(path: location.path, entries: content.outline, changed: unit?.members ?? [])
+        }
+      }
     } else {
       ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un paso de un flujo, un nodo del mapa o un fichero de la lista."))
     }
@@ -227,6 +234,110 @@ struct RelationsView: View {
         }
       }
     }
+  }
+}
+
+/// Migas sobre el visor: tipo › método según el cursor; clic salta a la declaración.
+struct Breadcrumbs: View {
+  @EnvironmentObject var model: AppModel
+  let path: String
+  let content: CodeContent
+  let changed: [MemberChange]
+
+  var body: some View {
+    let trail = Outline.trail(content.outline, line: model.cursorLine ?? 0)
+    let shown = trail.isEmpty ? Array(content.outline.prefix(1)) : trail
+    if !shown.isEmpty {
+      HStack(spacing: 4) {
+        ForEach(Array(shown.enumerated()), id: \.offset) { i, e in
+          if i > 0 { Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.tertiary) }
+          Button { model.go(to: CodeLocation(path: path, line: e.line)) } label: {
+            Text(e.kind == .method ? "\(e.name)()" : e.name)
+          }
+          .buttonStyle(.plain)
+        }
+        Spacer()
+      }
+      .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+      .padding(.horizontal, 14).padding(.vertical, 3)
+      Divider()
+    }
+  }
+}
+
+/// Estructura del fichero (⌘F12): filtra al escribir, Enter o clic saltan a la línea.
+struct StructurePopup: View {
+  @EnvironmentObject var model: AppModel
+  @Environment(\.dismiss) private var dismiss
+  let path: String
+  let entries: [OutlineEntry]
+  let changed: [MemberChange]
+  @State private var query = ""
+  @State private var selected = 0
+  @FocusState private var focused: Bool
+
+  private var filtered: [OutlineEntry] {
+    query.isEmpty ? entries : entries.filter { $0.name.localizedCaseInsensitiveContains(query) }
+  }
+
+  private func change(_ e: OutlineEntry) -> MemberChange? {
+    e.kind == .type ? nil : changed.first { $0.name == e.name && $0.change != .removed }
+  }
+
+  private func symbol(_ e: OutlineEntry) -> String {
+    switch e.kind {
+    case .type: "c.square"
+    case .method: "m.square"
+    case .field: "f.square"
+    }
+  }
+
+  private func open(_ e: OutlineEntry) {
+    dismiss()
+    model.go(to: CodeLocation(path: path, line: e.line))
+  }
+
+  var body: some View {
+    let items = filtered
+    VStack(spacing: 0) {
+      TextField("Buscar en la estructura", text: $query)
+        .textFieldStyle(.plain).font(.system(size: 13))
+        .padding(10)
+        .focused($focused)
+        .onSubmit { if items.indices.contains(selected) { open(items[selected]) } }
+        .onKeyPress(.downArrow) { selected = min(selected + 1, max(items.count - 1, 0)); return .handled }
+        .onKeyPress(.upArrow) { selected = max(selected - 1, 0); return .handled }
+        .onKeyPress(.escape) { dismiss(); return .handled }
+        .onChange(of: query) { _, _ in selected = 0 }
+      Divider()
+      ScrollViewReader { proxy in
+        ScrollView {
+          LazyVStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, e in
+              HStack(spacing: 6) {
+                Image(systemName: symbol(e)).foregroundStyle(.secondary)
+                Text(e.kind == .method ? "\(e.name)()" : e.name)
+                  .font(.system(size: 12, weight: change(e) == nil ? .regular : .semibold, design: .monospaced))
+                if let c = change(e) { Text(c.change.sign).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
+                Spacer()
+                Text("\(e.line)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+              }
+              .padding(.horizontal, 10).padding(.vertical, 3)
+              .background(i == selected ? Color.accentColor.opacity(0.18) : .clear)
+              .contentShape(Rectangle())
+              .onTapGesture { open(e) }
+              .id(i)
+            }
+          }
+        }
+        .onChange(of: selected) { _, i in proxy.scrollTo(i) }
+      }
+      if items.isEmpty {
+        Text("Sin resultados").font(.caption).foregroundStyle(.secondary).padding(12)
+      }
+    }
+    .frame(width: 440, height: 360)
+    .onAppear { focused = true }
   }
 }
 

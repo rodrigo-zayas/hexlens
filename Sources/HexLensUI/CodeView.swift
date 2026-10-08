@@ -5,7 +5,7 @@ import SwiftUI
 /// Colores de IntelliJ (Light y New UI Dark).
 struct CodeTheme {
   let background, gutter, gutterText, text, keyword, string, number, comment, annotation, field, method: NSColor
-  let added, removed, separator, addedBar, removedBar, guide, findMatch, findCurrent: NSColor
+  let added, removed, separator, addedBar, removedBar, guide, findMatch, findCurrent, usage: NSColor
 
   static func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
     NSColor(
@@ -19,7 +19,7 @@ struct CodeTheme {
     annotation: color(0x9E880D), field: color(0x871094), method: color(0x00627A),
     added: color(0xE5F4E5), removed: color(0xFBE4E4), separator: color(0xEEF2FB),
     addedBar: color(0x6CC56C), removedBar: color(0xE07070), guide: color(0xE4E6EB),
-    findMatch: color(0xFFE48C, 0.6), findCurrent: color(0xF2C55C))
+    findMatch: color(0xFFE48C, 0.6), findCurrent: color(0xF2C55C), usage: color(0xE3E8F4))
 
   static let dark = CodeTheme(
     background: color(0x1E1F22), gutter: color(0x1E1F22), gutterText: color(0x4B5059), text: color(0xBCBEC4),
@@ -27,7 +27,7 @@ struct CodeTheme {
     annotation: color(0xB3AE60), field: color(0xC77DBB), method: color(0x56A8F5),
     added: color(0x253A2B), removed: color(0x3F2A2C), separator: color(0x25272C),
     addedBar: color(0x549159), removedBar: color(0xBD5757), guide: color(0x34363B),
-    findMatch: color(0x5F5338), findCurrent: color(0x8A6E2F))
+    findMatch: color(0x5F5338), findCurrent: color(0x8A6E2F), usage: color(0x32373F))
 
   /// JetBrains Mono: la del IntelliJ instalado si no está en el sistema.
   static let font: NSFont = {
@@ -59,6 +59,8 @@ struct CodeContent {
   let links: [(NSRange, CodeLink)]
   /// Métodos importados estáticamente: sus llamadas van en cursiva, como en IntelliJ.
   var staticNames: Set<String> = []
+  /// Estructura del fichero (líneas del fichero nuevo).
+  var outline: [OutlineEntry] = []
 }
 
 struct ScrollRequest: Equatable {
@@ -83,12 +85,14 @@ struct CodeTextView: NSViewRepresentable {
   var addNoteSerial = 0
   var onAddNote: (Int, Int) -> Void = { _, _ in }
   var onOpenNote: (UUID) -> Void = { _ in }
+  /// Línea del fichero nuevo bajo el cursor, para las migas.
+  var onCursor: (Int?) -> Void = { _ in }
   let onLink: (CodeLink) -> Void
   @Environment(\.colorScheme) private var scheme
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
-  func makeNSView(context: Context) -> NSScrollView {
+  func makeNSView(context: Context) -> CodeContainerView {
     let scrollView = NSScrollView()
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = true
@@ -115,11 +119,12 @@ struct CodeTextView: NSViewRepresentable {
     NotificationCenter.default.addObserver(
       forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main
     ) { [weak textView] _ in textView?.needsDisplay = true }
-    return scrollView
+    let container = CodeContainerView(scrollView: scrollView, textView: textView)
+    context.coordinator.textView = textView
+    return container
   }
 
   private func applyHighlights(_ textView: CodeNSTextView, theme: CodeTheme, coordinator c: Coordinator, textChanged: Bool) {
-    guard let lm = textView.layoutManager else { return }
     let length = (textView.string as NSString).length
     let valid = matches.filter { NSMaxRange($0) <= length }
     let current = currentMatch.flatMap { valid.indices.contains($0) ? $0 : nil }
@@ -127,10 +132,9 @@ struct CodeTextView: NSViewRepresentable {
     guard textChanged || state != c.highlight else { return }
     let previous = c.highlight
     c.highlight = state
-    lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: length))
-    for (i, r) in valid.enumerated() {
-      lm.addTemporaryAttribute(.backgroundColor, value: i == current ? theme.findCurrent : theme.findMatch, forCharacterRange: r)
-    }
+    textView.findMatches = valid
+    textView.findCurrent = current
+    textView.repaintHighlights()
     if let current, textChanged || current != previous.current || valid != previous.matches {
       let r = valid[current]
       DispatchQueue.main.async {
@@ -140,14 +144,15 @@ struct CodeTextView: NSViewRepresentable {
     }
   }
 
-  func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    guard let textView = scrollView.documentView as? CodeNSTextView else { return }
+  func updateNSView(_ container: CodeContainerView, context: Context) {
+    let textView = container.textView
     let theme = scheme == .dark ? CodeTheme.dark : CodeTheme.light
     let c = context.coordinator
     c.onLink = onLink
+    c.onCursor = onCursor
     textView.onAddNote = onAddNote
     textView.onOpenNote = onOpenNote
-    if textView.noteSpans != notes { textView.noteSpans = notes; textView.needsDisplay = true }
+    if textView.noteSpans != notes { textView.noteSpans = notes; textView.needsDisplay = true; container.strip.needsDisplay = true }
     if addNoteSerial != c.lastNoteSerial {
       let first = c.lastNoteSerial == nil
       c.lastNoteSerial = addNoteSerial
@@ -161,17 +166,21 @@ struct CodeTextView: NSViewRepresentable {
       textView.lines = content.document.lines
       textView.lineStarts = content.document.lineStarts
       textView.computeIndents()
+      textView.indexIdentifiers(tokens: content.tokens)
+      c.reportCursor(textView)
       // Fichero nuevo entero: sin fondo verde, solo la barra del margen (como IntelliJ).
       textView.allAdded = !content.document.lines.isEmpty && content.document.lines.allSatisfy { $0.kind == .added }
       textView.theme = theme
       textView.backgroundColor = theme.background
+      container.strip.theme = theme
       textView.textStorage?.setAttributedString(Self.attributed(content, theme: theme))
       textView.scroll(.zero)
     }
     applyHighlights(textView, theme: theme, coordinator: c, textChanged: textChanged)
+    container.strip.needsDisplay = true
     if let scroll, scroll != c.lastScroll, scroll.line < content.document.lineStarts.count {
       c.lastScroll = scroll
-      DispatchQueue.main.async { textView.reveal(line: scroll.line, document: content.document) }
+      DispatchQueue.main.async { textView.reveal(line: scroll.line) }
     }
   }
 
@@ -231,6 +240,19 @@ struct CodeTextView: NSViewRepresentable {
     }
     var highlight = Highlight()
     var onLink: (CodeLink) -> Void = { _ in }
+    var onCursor: (Int?) -> Void = { _ in }
+    weak var textView: CodeNSTextView?
+
+    func reportCursor(_ tv: CodeNSTextView) {
+      let line = tv.currentNewLine()
+      DispatchQueue.main.async { [onCursor] in onCursor(line) }
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+      guard let tv = notification.object as? CodeNSTextView else { return }
+      tv.updateUsages()
+      reportCursor(tv)
+    }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
       guard let url = link as? URL, url.scheme == "hexlens", let i = Int(url.lastPathComponent), links.indices.contains(i) else { return false }
@@ -249,8 +271,63 @@ final class CodeNSTextView: NSTextView {
   var noteSpans: [NoteSpan] = []
   var onAddNote: (Int, Int) -> Void = { _, _ in }
   var onOpenNote: (UUID) -> Void = { _ in }
+  var findMatches: [NSRange] = []
+  var findCurrent: Int?
   private var indents: [Int] = []
   private var indentUnit = 2
+  private var identifierIndex: [String: [NSRange]] = [:]
+  private var identifierTokens: [NSRange] = []
+  private var usages: [NSRange] = []
+
+  func indexIdentifiers(tokens: [Token]) {
+    let ns = string as NSString
+    identifierIndex = [:]
+    identifierTokens = []
+    usages = []
+    for t in tokens where t.kind == .identifier && NSMaxRange(t.range) <= ns.length {
+      identifierTokens.append(t.range)
+      identifierIndex[ns.substring(with: t.range), default: []].append(t.range)
+    }
+  }
+
+  /// Usos del identificador bajo el cursor (o seleccionado entero), con el fondo tenue.
+  func updateUsages() {
+    let sel = selectedRange()
+    var found: [NSRange] = []
+    var lo = 0, hi = identifierTokens.count
+    while lo < hi {
+      let mid = (lo + hi) / 2
+      if NSMaxRange(identifierTokens[mid]) < sel.location { lo = mid + 1 } else { hi = mid }
+    }
+    if lo < identifierTokens.count {
+      let t = identifierTokens[lo]
+      let touches = sel.length == 0 ? (t.location <= sel.location && sel.location <= NSMaxRange(t)) : t == sel
+      if touches, let all = identifierIndex[(string as NSString).substring(with: t)], all.count > 1 { found = all }
+    }
+    guard found != usages else { return }
+    usages = found
+    repaintHighlights()
+  }
+
+  /// Usos debajo y búsqueda encima, para que ⌘F nunca quede tapado.
+  func repaintHighlights() {
+    guard let lm = layoutManager else { return }
+    let length = (string as NSString).length
+    lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: length))
+    for r in usages where NSMaxRange(r) <= length {
+      lm.addTemporaryAttribute(.backgroundColor, value: theme.usage, forCharacterRange: r)
+    }
+    for (i, r) in findMatches.enumerated() where NSMaxRange(r) <= length {
+      lm.addTemporaryAttribute(.backgroundColor, value: i == findCurrent ? theme.findCurrent : theme.findMatch, forCharacterRange: r)
+    }
+  }
+
+  /// Línea del fichero nuevo bajo el cursor (la anterior más cercana si es una línea quitada).
+  func currentNewLine() -> Int? {
+    guard !lines.isEmpty else { return nil }
+    let i = min(lineIndex(at: selectedRange().location), lines.count - 1)
+    return lines[...i].last { $0.newNumber != nil }?.newNumber
+  }
 
   /// Sangría por línea (las vacías heredan la menor de sus vecinas) y unidad de sangría del fichero.
   func computeIndents() {
@@ -401,9 +478,10 @@ final class CodeNSTextView: NSTextView {
     super.mouseDown(with: event)
   }
 
-  func reveal(line: Int, document: CodeDocument) {
-    let start = document.lineStarts[line]
-    let length = (document.lines[line].text as NSString).length
+  func reveal(line: Int) {
+    guard lines.indices.contains(line), lineStarts.indices.contains(line) else { return }
+    let start = lineStarts[line]
+    let length = (lines[line].text as NSString).length
     let range = NSRange(location: start, length: length)
     guard let lm = layoutManager, let tc = textContainer else { return }
     let glyphs = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -414,5 +492,80 @@ final class CodeNSTextView: NSTextView {
     scroll(NSPoint(x: 0, y: max(0, r.minY - visible / 3)))
     enclosingScrollView?.reflectScrolledClipView(enclosingScrollView!.contentView)
     if length > 0 { showFindIndicator(for: range) }
+  }
+}
+
+/// Visor + franja de marcas a la derecha (cambios, notas y coincidencias).
+final class CodeContainerView: NSView {
+  let scrollView: NSScrollView
+  let textView: CodeNSTextView
+  let strip: ScrollMarkStrip
+
+  init(scrollView: NSScrollView, textView: CodeNSTextView) {
+    self.scrollView = scrollView
+    self.textView = textView
+    strip = ScrollMarkStrip(textView: textView)
+    super.init(frame: .zero)
+    addSubview(scrollView)
+    addSubview(strip)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func layout() {
+    super.layout()
+    let w = ScrollMarkStrip.width
+    scrollView.frame = NSRect(x: 0, y: 0, width: max(0, bounds.width - w), height: bounds.height)
+    strip.frame = NSRect(x: bounds.width - w, y: 0, width: w, height: bounds.height)
+  }
+}
+
+/// Marcas proporcionales a la altura del fichero; un clic salta a la línea.
+final class ScrollMarkStrip: NSView {
+  static let width: CGFloat = 12
+  weak var textView: CodeNSTextView?
+  var theme = CodeTheme.light { didSet { needsDisplay = true } }
+
+  init(textView: CodeNSTextView) {
+    self.textView = textView
+    super.init(frame: .zero)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override var isFlipped: Bool { true }
+
+  private func y(_ line: Int, count: Int) -> CGFloat { (CGFloat(line) + 0.5) / CGFloat(max(count, 1)) * bounds.height }
+
+  override func draw(_ dirtyRect: NSRect) {
+    theme.background.setFill()
+    bounds.fill()
+    theme.gutterText.withAlphaComponent(0.25).setFill()
+    NSRect(x: 0, y: 0, width: 1, height: bounds.height).fill()
+    guard let tv = textView, !tv.lines.isEmpty else { return }
+    let n = tv.lines.count
+    func mark(_ line: Int, lane: Int, _ color: NSColor) {
+      color.setFill()
+      NSRect(x: 2 + CGFloat(lane) * 3.5, y: y(line, count: n) - 1.5, width: 3, height: 3).fill()
+    }
+    for (i, l) in tv.lines.enumerated() {
+      switch l.kind {
+      case .added: mark(i, lane: 0, theme.addedBar)
+      case .removed: mark(i, lane: 0, theme.removedBar)
+      default: break
+      }
+      if let num = l.newNumber, tv.noteSpans.contains(where: { !$0.outdated && $0.start <= num && num <= $0.end }) {
+        mark(i, lane: 1, .systemBlue)
+      }
+    }
+    for r in tv.findMatches { mark(tv.lineIndex(at: r.location), lane: 2, theme.findCurrent) }
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard let tv = textView, !tv.lines.isEmpty else { return }
+    let p = convert(event.locationInWindow, from: nil)
+    let line = min(tv.lines.count - 1, max(0, Int(p.y / max(bounds.height, 1) * CGFloat(tv.lines.count))))
+    guard tv.lines[line].kind != .separator else { return }
+    tv.reveal(line: line)
   }
 }
