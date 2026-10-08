@@ -10,6 +10,7 @@ struct UsagesPopupView: View {
   @State private var hovered: UsageHit?
   @State private var selection: UsageHit?
   @FocusState private var filterFocused: Bool
+  @State private var keyMonitor = PopupKeyMonitor()
 
   private var state: UsagePopupState { model.usagePopup ?? UsagePopupState(word: "", groups: [], loading: false) }
 
@@ -46,12 +47,10 @@ struct UsagesPopupView: View {
           .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
           .padding(.horizontal, 10).padding(.bottom, 8)
           .focused($filterFocused)
-          .modifier(keys)
       } else {
         TextField("Filtrar", text: $filter)
           .textFieldStyle(.roundedBorder).padding(.horizontal, 10).padding(.bottom, 8)
           .focused($filterFocused)
-          .modifier(keys)
       }
       Divider()
       ScrollViewReader { proxy in
@@ -79,10 +78,15 @@ struct UsagesPopupView: View {
       }
     }
     .frame(width: 720, height: 460)
-    .onAppear { query = state.word; filterFocused = true; selection = flat.first }
+    .onAppear {
+      query = state.word; filterFocused = true; selection = flat.first
+      // Texto seleccionado al abrir: se puede seguir con él, borrarlo o escribir encima.
+      DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+    }
     .onChange(of: filter) { _, _ in selection = flat.first }
     .onChange(of: state.groups) { _, _ in selection = flat.first }
-    .modifier(keys)
+    .onAppear { keyMonitor.install(keys) }
+    .onDisappear { keyMonitor.remove() }
   }
 
   private func header(_ g: UsageGroup) -> some View {
@@ -136,8 +140,7 @@ struct UsagesPopupView: View {
   }
 
   private func open(_ h: UsageHit) {
-    model.usagePopup = nil
-    model.go(to: CodeLocation(path: h.path, line: h.line))
+    model.openSearchHit(h, query: state.word, global: state.global)
   }
 }
 
@@ -183,18 +186,38 @@ struct FloatingPopup<Content: View>: View {
   static let handleHeight: CGFloat = 40
 }
 
-private struct PopupKeys: ViewModifier {
+private struct PopupKeys {
   let move: (Int) -> Void
   let submit: () -> Void
   let close: () -> Void
+}
 
-  func body(content: Content) -> some View {
-    content
-      .onKeyPress(.downArrow) { move(1); return .handled }
-      .onKeyPress(.upArrow) { move(-1); return .handled }
-      .onKeyPress(.pageDown) { move(10); return .handled }
-      .onKeyPress(.pageUp) { move(-10); return .handled }
-      .onKeyPress(.return) { submit(); return .handled }
-      .onKeyPress(.escape) { close(); return .handled }
+/// Captura el teclado de la ventana mientras el panel está abierto, tenga quien tenga el foco.
+private final class PopupKeyMonitor {
+  private var monitor: Any?
+
+  func install(_ keys: PopupKeys) {
+    remove()
+    monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+      let mods = e.modifierFlags.intersection([.command, .option, .control])
+      guard mods.isEmpty else { return e }
+      switch e.keyCode {
+      case 53: keys.close()
+      case 125: keys.move(1)
+      case 126: keys.move(-1)
+      case 121: keys.move(10)
+      case 116: keys.move(-10)
+      case 36, 76: keys.submit()
+      default: return e
+      }
+      return nil
+    }
   }
+
+  func remove() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    monitor = nil
+  }
+
+  deinit { remove() }
 }
