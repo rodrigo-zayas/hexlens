@@ -66,11 +66,23 @@ struct ScrollRequest: Equatable {
   let serial: Int
 }
 
+/// Rango de una nota en números de línea del fichero nuevo, para el margen y el fondo.
+struct NoteSpan: Equatable {
+  let id: UUID
+  let start: Int
+  let end: Int
+  let outdated: Bool
+}
+
 struct CodeTextView: NSViewRepresentable {
   let content: CodeContent
   let scroll: ScrollRequest?
   let matches: [NSRange]
   let currentMatch: Int?
+  var notes: [NoteSpan] = []
+  var addNoteSerial = 0
+  var onAddNote: (Int, Int) -> Void = { _, _ in }
+  var onOpenNote: (UUID) -> Void = { _ in }
   let onLink: (CodeLink) -> Void
   @Environment(\.colorScheme) private var scheme
 
@@ -133,6 +145,14 @@ struct CodeTextView: NSViewRepresentable {
     let theme = scheme == .dark ? CodeTheme.dark : CodeTheme.light
     let c = context.coordinator
     c.onLink = onLink
+    textView.onAddNote = onAddNote
+    textView.onOpenNote = onOpenNote
+    if textView.noteSpans != notes { textView.noteSpans = notes; textView.needsDisplay = true }
+    if addNoteSerial != c.lastNoteSerial {
+      let first = c.lastNoteSerial == nil
+      c.lastNoteSerial = addNoteSerial
+      if !first { DispatchQueue.main.async { textView.addNoteAtSelection() } }
+    }
     let key = "\(content.id)|\(scheme)"
     let textChanged = c.key != key
     if textChanged {
@@ -203,6 +223,7 @@ struct CodeTextView: NSViewRepresentable {
     var key = ""
     var links: [CodeLink] = []
     var lastScroll: ScrollRequest?
+    var lastNoteSerial: Int?
     struct Highlight: Equatable {
       var matches: [NSRange] = []
       var current: Int?
@@ -225,6 +246,9 @@ final class CodeNSTextView: NSTextView {
   var lineStarts: [Int] = []
   var theme = CodeTheme.light
   var allAdded = false
+  var noteSpans: [NoteSpan] = []
+  var onAddNote: (Int, Int) -> Void = { _, _ in }
+  var onOpenNote: (UUID) -> Void = { _ in }
   private var indents: [Int] = []
   private var indentUnit = 2
 
@@ -274,6 +298,10 @@ final class CodeNSTextView: NSTextView {
         color.setFill()
         NSRect(x: 0, y: frag.minY + origin.y, width: max(self.bounds.width, rect.maxX), height: frag.height).fill()
       }
+      if let n = line.newNumber, self.noteSpans.contains(where: { !$0.outdated && $0.start <= n && n <= $0.end }) {
+        NSColor.systemBlue.withAlphaComponent(0.09).setFill()
+        NSRect(x: 0, y: frag.minY + origin.y, width: max(self.bounds.width, rect.maxX), height: frag.height).fill()
+      }
       // Guías de indentación, como las de IntelliJ.
       let i = self.lineIndex(at: charIndex)
       if i < self.indents.count, self.indents[i] > self.indentUnit {
@@ -317,11 +345,60 @@ final class CodeNSTextView: NSTextView {
       default: NSColor.clear.setFill()
       }
       NSRect(x: gutter.maxX - 4, y: y, width: 3, height: frag.height).fill()
+      if let n = line.newNumber, let span = self.noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
+        (span.outdated ? self.theme.gutterText : NSColor.systemBlue).setFill()
+        NSBezierPath(roundedRect: NSRect(x: gutter.minX + 3, y: y + frag.height / 2 - 3.5, width: 7, height: 7), xRadius: 2, yRadius: 2).fill()
+      }
       guard let n = line.newNumber ?? line.oldNumber else { return }
       let label = NSAttributedString(string: "\(n)", attributes: attrs)
       let size = label.size()
       label.draw(at: NSPoint(x: gutter.maxX - 9 - size.width, y: y + (frag.height - size.height) / 2))
     }
+  }
+
+  // MARK: Notas
+
+  /// Líneas del fichero nuevo cubiertas por la selección (o la del cursor si no hay selección).
+  func addNoteAtSelection() {
+    let sel = selectedRange()
+    let total = (string as NSString).length
+    guard !lines.isEmpty, sel.location <= total else { return }
+    let first = lineIndex(at: sel.location)
+    let last = sel.length > 0 ? lineIndex(at: max(sel.location, NSMaxRange(sel) - 1)) : first
+    let numbers = lines[first...last].compactMap(\.newNumber)
+    guard let lo = numbers.min(), let hi = numbers.max() else { NSSound.beep(); return }
+    onAddNote(lo, hi)
+  }
+
+  @objc private func addNoteFromMenu(_ sender: Any?) { addNoteAtSelection() }
+
+  override func menu(for event: NSEvent) -> NSMenu? {
+    if selectedRange().length == 0 {
+      let p = convert(event.locationInWindow, from: nil)
+      let i = characterIndexForInsertion(at: p)
+      if i != NSNotFound { setSelectedRange(NSRange(location: i, length: 0)) }
+    }
+    let menu = super.menu(for: event) ?? NSMenu()
+    let item = NSMenuItem(title: "Añadir nota…", action: #selector(addNoteFromMenu(_:)), keyEquivalent: "n")
+    item.keyEquivalentModifierMask = [.command, .option]
+    item.target = self
+    menu.insertItem(item, at: 0)
+    menu.insertItem(.separator(), at: 1)
+    return menu
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    let p = convert(event.locationInWindow, from: nil)
+    if p.x - visibleRect.minX < Self.gutterWidth, let lm = layoutManager, let tc = textContainer, !lines.isEmpty {
+      let origin = textContainerOrigin
+      let glyph = lm.glyphIndex(for: NSPoint(x: 1, y: p.y - origin.y), in: tc)
+      let line = lines[lineIndex(at: lm.characterIndexForGlyph(at: glyph))]
+      if let n = line.newNumber, let span = noteSpans.first(where: { $0.start <= n && n <= $0.end }) {
+        onOpenNote(span.id)
+        return
+      }
+    }
+    super.mouseDown(with: event)
   }
 
   func reveal(line: Int, document: CodeDocument) {

@@ -21,8 +21,12 @@ struct DetailView: View {
             let matches = model.findMatches
             CodeTextView(
               content: content, scroll: model.scrollRequest, matches: matches,
-              currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1)
-            ) { model.follow($0) }
+              currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1),
+              notes: model.notes(in: location.path).map { NoteSpan(id: $0.id, start: $0.startLine, end: $0.endLine, outdated: $0.outdated) },
+              addNoteSerial: model.addNoteSerial,
+              onAddNote: { model.beginNote(path: location.path, start: $0, end: $1) },
+              onOpenNote: { model.editNote($0) },
+              onLink: { model.follow($0) })
           } else {
             ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
           }
@@ -34,6 +38,7 @@ struct DetailView: View {
           }
         }
       }
+      .sheet(item: $model.noteDraft) { _ in NoteEditor() }
     } else {
       ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un paso de un flujo, un nodo del mapa o un fichero de la lista."))
     }
@@ -264,5 +269,39 @@ struct FindBar: View {
   private func toggle(_ title: String, _ value: Binding<Bool>, help: String) -> some View {
     Toggle(isOn: value) { Text(title).font(.system(size: 11, weight: .medium, design: .monospaced)) }
       .toggleStyle(.button).controlSize(.small).help(help)
+  }
+}
+
+
+/// Editor de una nota: ⌘↩ guarda, Esc cancela.
+struct NoteEditor: View {
+  @EnvironmentObject var model: AppModel
+  @State private var text = ""
+  @FocusState private var focused: Bool
+
+  var body: some View {
+    let draft = model.noteDraft
+    let range = draft.map { $0.startLine == $0.endLine ? "\($0.startLine)" : "\($0.startLine)-\($0.endLine)" } ?? ""
+    VStack(alignment: .leading, spacing: 10) {
+      Text("\(((draft?.path ?? "") as NSString).lastPathComponent):\(range)")
+        .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+      TextEditor(text: $text)
+        .font(.system(size: 13))
+        .focused($focused)
+        .frame(width: 420, height: 140)
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
+      HStack {
+        if let id = draft?.noteID {
+          Button("Borrar", role: .destructive) { model.noteDraft = nil; model.deleteNote(id) }
+        }
+        Spacer()
+        Button("Cancelar") { model.noteDraft = nil }.keyboardShortcut(.cancelAction)
+        Button("Guardar") { model.noteDraft?.body = text; model.commitDraft() }
+          .keyboardShortcut(.return, modifiers: .command)
+          .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+    .padding(16)
+    .onAppear { text = draft?.body ?? ""; focused = true }
   }
 }

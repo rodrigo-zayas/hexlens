@@ -108,6 +108,11 @@ public final class AppModel: ObservableObject {
   private var scrollSerial = 0
 
   // Búsqueda en el visor (⌘F)
+  @Published public private(set) var notes: [ReviewNote] = []
+  @Published var noteDraft: NoteDraft?
+  @Published private(set) var addNoteSerial = 0
+  private var noteStore: ReviewNoteStore?
+
   @Published var findVisible = false
   @Published var findQuery = ""
   @Published var findCaseSensitive = false
@@ -259,6 +264,7 @@ public final class AppModel: ObservableObject {
     backStack = []
     forwardStack = []
     reviewed = Set(UserDefaults.standard.stringArray(forKey: reviewKey) ?? [])
+    loadNotes(for: session, pr: pr)
     busy = nil
     recomputeOrder()
     relayout()
@@ -436,6 +442,75 @@ public final class AppModel: ObservableObject {
     scrollRequest = ScrollRequest(line: target, serial: scrollSerial)
   }
 
+  // MARK: - Notas
+
+  /// Carga las notas de la PR (clave por repo + PR, no por commit) y las reancla contra la cabeza actual.
+  private func loadNotes(for s: ReviewSession, pr: PullRequestSummary?) {
+    noteDraft = nil
+    let key = pr.map { "pr\($0.number)" } ?? "\(s.baseRef)..\(s.headRef)"
+    let store = ReviewNoteStore(repoRoot: s.repo.root.path, key: key)
+    noteStore = store
+    let loaded = store.load()
+    var files: [String: String] = [:]
+    for path in Set(loaded.map(\.path)) { files[path] = s.store.text(path, at: s.headSHA) }
+    notes = reanchor(loaded, files: files, head: s.headSHA)
+    if notes != loaded { store.save(notes) }
+  }
+
+  func notes(in path: String) -> [ReviewNote] { notes.filter { $0.path == path } }
+
+  public func requestAddNote() {
+    guard location != nil else { return }
+    addNoteSerial += 1
+  }
+
+  /// Abre el editor para una nota nueva sobre las líneas (del fichero nuevo) indicadas.
+  func beginNote(path: String, start: Int, end: Int) {
+    noteDraft = NoteDraft(noteID: nil, path: path, startLine: min(start, end), endLine: max(start, end), body: "")
+  }
+
+  func editNote(_ id: UUID) {
+    guard let n = notes.first(where: { $0.id == id }) else { return }
+    noteDraft = NoteDraft(noteID: id, path: n.path, startLine: n.startLine, endLine: n.endLine, body: n.body)
+  }
+
+  func commitDraft() {
+    guard let d = noteDraft else { return }
+    noteDraft = nil
+    let body = d.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let id = d.noteID {
+      if body.isEmpty { deleteNote(id) } else { updateNote(id, body: body) }
+    } else if !body.isEmpty {
+      addNote(path: d.path, start: d.startLine, end: d.endLine, body: body)
+    }
+  }
+
+  public func addNote(path: String, start: Int, end: Int, body: String) {
+    guard let s = session else { return }
+    let lines = (s.store.text(path, at: s.headSHA) ?? "").split(separator: "\n", omittingEmptySubsequences: false)
+    guard start >= 1, end >= start, end <= lines.count else { return }
+    let snippet = lines[(start - 1)..<end].joined(separator: "\n")
+    notes.append(ReviewNote(path: path, startLine: start, endLine: end, snippet: snippet, body: body, anchorSHA: s.headSHA))
+    noteStore?.save(notes)
+  }
+
+  public func updateNote(_ id: UUID, body: String) {
+    guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
+    notes[i].body = body
+    notes[i].updatedAt = Date()
+    noteStore?.save(notes)
+  }
+
+  public func deleteNote(_ id: UUID) {
+    notes.removeAll { $0.id == id }
+    noteStore?.save(notes)
+  }
+
+  public func goToNote(_ id: UUID) {
+    guard let n = notes.first(where: { $0.id == id }) else { return }
+    go(to: CodeLocation(path: n.path, line: n.startLine))
+  }
+
   // MARK: - Revisión
 
   public func toggleReviewed(_ id: String? = nil) {
@@ -489,4 +564,14 @@ public final class AppModel: ObservableObject {
     guard let s = session else { return }
     do { try ClaudeLauncher.open(prompt: prompt, model: claudeModelID, in: s.repo.root) } catch { errorMessage = error.localizedDescription }
   }
+}
+
+/// Nota en edición: `id == nil` si es nueva.
+struct NoteDraft: Identifiable {
+  let noteID: UUID?
+  let path: String
+  let startLine: Int
+  let endLine: Int
+  var body: String
+  var id: String { "\(noteID?.uuidString ?? "new")|\(path)|\(startLine)" }
 }
