@@ -11,6 +11,7 @@ struct UsagesPopupView: View {
   @State private var selection: UsageHit?
   @FocusState private var filterFocused: Bool
   @State private var keyMonitor = PopupKeyMonitor()
+  @State private var wasGlobal = false
 
   private var state: UsagePopupState { model.usagePopup ?? UsagePopupState(word: "", groups: [], loading: false) }
 
@@ -79,14 +80,18 @@ struct UsagesPopupView: View {
     }
     .frame(width: 720, height: 460)
     .onAppear {
-      query = state.word; filterFocused = true; selection = flat.first
+      query = state.word; wasGlobal = state.global; filterFocused = true; selection = flat.first
       // Texto seleccionado al abrir: se puede seguir con él, borrarlo o escribir encima.
-      DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+      selectFieldText()
     }
     .onChange(of: filter) { _, _ in selection = flat.first }
     .onChange(of: state.groups) { _, _ in selection = flat.first }
     .onAppear { keyMonitor.install(keys) }
-    .onDisappear { keyMonitor.remove() }
+    .onDisappear {
+      keyMonitor.remove()
+      // Al cerrar, model.usagePopup ya es nil: se usa lo capturado al abrir.
+      if wasGlobal { model.rememberRepoQuery(query) }
+    }
   }
 
   private func header(_ g: UsageGroup) -> some View {
@@ -130,6 +135,15 @@ struct UsagesPopupView: View {
         if state.global, query != state.word { model.searchRepo(query) } else if let s = selection { open(s) }
       },
       close: { model.usagePopup = nil })
+  }
+
+  /// Selecciona el texto del campo del panel (nunca el del visor): espera a que el foco llegue al campo.
+  private func selectFieldText(attempt: Int = 0) {
+    if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isFieldEditor {
+      editor.selectAll(nil)
+    } else if attempt < 10 {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { selectFieldText(attempt: attempt + 1) }
+    }
   }
 
   private func move(_ d: Int) {

@@ -5,6 +5,7 @@ import AppKit
 @MainActor enum SwipeNavigation {
   private enum Decision { case undecided, pass, swipe(back: Bool) }
   private static var monitor: Any?
+  private static var keyMonitor: Any?
   private static var decision = Decision.pass
   private static var dx: CGFloat = 0
   private static var dy: CGFloat = 0
@@ -14,6 +15,15 @@ import AppKit
 
   static func install(_ model: AppModel) {
     guard monitor == nil else { return }
+    // ⌘← / ⌘→: atrás/adelante, salvo escribiendo en un campo (ahí mueven el cursor como siempre).
+    keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak model] e in
+      guard let model, e.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+        e.keyCode == 123 || e.keyCode == 124
+      else { return e }
+      if let tv = e.window?.firstResponder as? NSTextView, tv.isEditable { return e }
+      if e.keyCode == 123 { model.back() } else { model.forward() }
+      return nil
+    }
     monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak model] event in
       guard let model else { return event }
       // Inercia tras un gesto de navegación: no debe desplazar la vista.

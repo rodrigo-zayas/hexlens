@@ -156,7 +156,7 @@ public final class AppModel: ObservableObject {
   @Published var findCaseSensitive = false
   @Published var findWholeWord = false
   @Published var findIndex = 0
-  /// Coincidencias de la vista previa de Markdown cuando está visible (sustituye a las del código).
+  /// Coincidencias del Markdown renderizado cuando está visible (sustituye a las del código).
   @Published var previewFindCount: Int?
   @Published private(set) var findFocusSerial = 0
 
@@ -625,7 +625,11 @@ public final class AppModel: ObservableObject {
     if text.isEmpty, findVisible { text = findQuery }
     if text.trimmingCharacters(in: .whitespaces).isEmpty {
       // Sin nada nuevo que buscar se recupera la última búsqueda con sus resultados.
-      usagePopup = lastRepoSearch ?? UsagePopupState(word: "", groups: [], loading: false, global: true)
+      if let last = lastRepoSearch, !last.word.isEmpty, last.groups.isEmpty {
+        searchRepo(last.word)
+      } else {
+        usagePopup = lastRepoSearch ?? UsagePopupState(word: "", groups: [], loading: false, global: true)
+      }
     } else {
       searchRepo(text)
     }
@@ -656,6 +660,12 @@ public final class AppModel: ObservableObject {
         return line >= hit.line
       } ?? 0
     }
+  }
+
+  /// Guarda lo escrito al cerrar el panel aunque no se haya lanzado (si se borró, ⌘⇧F abre vacío).
+  func rememberRepoQuery(_ text: String) {
+    guard lastRepoSearch?.word != text else { return }
+    lastRepoSearch = UsagePopupState(word: text, groups: [], loading: false, global: true)
   }
 
   func searchRepo(_ text: String) {
