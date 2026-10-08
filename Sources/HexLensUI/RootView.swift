@@ -266,6 +266,11 @@ public struct ReviewCommands: Commands {
       Button("Abrir repositorio…") { model.chooseRepository() }.keyboardShortcut("o")
       Button("Elegir PR…") { model.showPRPicker = true }.keyboardShortcut("p").disabled(model.repo == nil)
     }
+    CommandGroup(after: .textEditing) {
+      Button("Buscar…") { model.showFind() }.keyboardShortcut("f").disabled(model.location == nil)
+      Button("Buscar siguiente") { model.findNext() }.keyboardShortcut("g").disabled(model.location == nil)
+      Button("Buscar anterior") { model.findPrevious() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(model.location == nil)
+    }
     CommandMenu("Revisión") {
       Button("Siguiente") { model.step(1) }.keyboardShortcut("]")
       Button("Anterior") { model.step(-1) }.keyboardShortcut("[")
