@@ -1,26 +1,13 @@
 import HexLensCore
 import SwiftUI
 
-/// Flujos de la PR: los que describe el agente (Claude) o los del análisis estático.
+/// Flujos de la PR del análisis estático.
 struct FlowsView: View {
   @EnvironmentObject var model: AppModel
 
   var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Picker("", selection: $model.flowSource) {
-          ForEach(FlowSource.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented).labelsHidden().fixedSize()
-        Spacer()
-      }
-      .padding(.horizontal, 14).padding(.top, 10)
-      switch model.flowSource {
-      case .agent: AgentFlowsView()
-      case .automatic: AutomaticFlowsView()
-      }
-    }
-    .background(Color(nsColor: .textBackgroundColor))
+    AutomaticFlowsView()
+      .background(Color(nsColor: .textBackgroundColor))
   }
 }
 
