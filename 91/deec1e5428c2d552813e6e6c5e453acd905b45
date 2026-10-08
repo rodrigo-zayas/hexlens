@@ -1,0 +1,25 @@
+Sources/HexLensUI/GraphCanvas.swift
+  s_4727cc1cd4df26::t_357e044fc2bb41 45-46,105-108,117-119,131-132,144-167,183-184,188-219,233,239,241-252
+Sources/HexLensUI/MapScrollView.swift
+  s_4727cc1cd4df26::t_53f43f9829e577 26-28,31-33,40-47,51,58-59,84-85,89-90,92-99,106,112,114-119,130,132-135,139-171,177,179-192,196,198,210-218
+Sources/HexLensCore/Architecture/ArchitectureProfile.swift
+  s_4727cc1cd4df26::t_e1ba609fbcd452 66-67
+Sources/HexLensCore/GraphLayout.swift
+  s_4727cc1cd4df26::t_2c0d0751cbf11c 118-125,130,132-133,136-140,148-158,176-177,181-182,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91deec1e5428c2d552813e6e6c5e453acd905b45",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
