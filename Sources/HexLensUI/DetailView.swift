@@ -6,6 +6,7 @@ struct DetailView: View {
   @EnvironmentObject var model: AppModel
   @State private var tab = Tab.code
   @State private var sync = ScrollSync()
+  @AppStorage("markdownPreview") private var markdownPreview = true
 
   enum Tab: String, CaseIterable { case code = "Código", relations = "Relaciones" }
 
@@ -16,6 +17,8 @@ struct DetailView: View {
         header(location.path, unit: unit, session: session)
         Divider()
         switch tab {
+        case .code where Self.isMarkdown(location.path) && markdownPreview:
+          markdownPane(location.path, unit: unit, session: session)
         case .code:
           if let content = model.content(for: location.path) {
             if model.findVisible { FindBar() }
@@ -41,6 +44,30 @@ struct DetailView: View {
       }
     } else {
       ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un nodo del mapa o un fichero de la lista."))
+    }
+  }
+
+  static func isMarkdown(_ path: String) -> Bool {
+    let ext = (path as NSString).pathExtension.lowercased()
+    return ext == "md" || ext == "markdown"
+  }
+
+  @ViewBuilder
+  private func markdownPane(_ path: String, unit: CodeUnit?, session: ReviewSession) -> some View {
+    let isDeleted = unit?.status == .deleted
+    let source = isDeleted
+      ? session.store.text(unit?.oldPath ?? path, at: session.baseSHA)
+      : session.store.text(path, at: session.headSHA)
+    if let source {
+      let inPR = unit.map { !$0.isGhost } ?? false
+      MarkdownPreview(
+        text: source, path: path,
+        changes: inPR ? unit.map { ($0.additions, $0.deletions) } : nil,
+        onShowChanges: { markdownPreview = false },
+        onOpenPath: { model.go(to: CodeLocation(path: $0, line: nil)) })
+        .id(path)
+    } else {
+      ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
     }
   }
 
@@ -135,7 +162,13 @@ struct DetailView: View {
       HStack(spacing: Metrics.s) {
         Picker("", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
           .pickerStyle(.segmented).labelsHidden().fixedSize()
-        if tab == .code {
+        if tab == .code, Self.isMarkdown(path) {
+          Button { markdownPreview.toggle() } label: {
+            Image(systemName: markdownPreview ? "chevron.left.forwardslash.chevron.right" : "doc.richtext")
+          }
+          .help(markdownPreview ? "Ver el código fuente con los cambios" : "Ver la vista previa renderizada")
+        }
+        if tab == .code, !(Self.isMarkdown(path) && markdownPreview) {
           Toggle("Completo", isOn: Binding(get: { model.fullFile }, set: { _ in model.toggleFullFile() }))
             .toggleStyle(.checkbox).fixedSize()
             .help("Fichero entero con los cambios marcados, o solo los fragmentos cambiados")
