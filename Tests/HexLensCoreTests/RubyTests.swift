@@ -198,3 +198,36 @@ final class RailsProfileTests: XCTestCase {
     XCTAssertEqual(profile.testSubject(of: test, among: [test, subject])?.path, subject.path)
   }
 }
+
+final class RubyLexerTests: XCTestCase {
+  func testTokenKinds() {
+    let src = """
+    # comentario
+    class Foo < Bar
+      def self.call(id:, name: "x")
+        @user = User.find(id) unless id.nil?
+        sql = <<~SQL
+          SELECT 1
+        SQL
+        render json: { status: :ok, ids: %w[a b] }
+      end
+    end
+    """
+    let ns = src as NSString
+    let toks = RubyLexer.tokens(src)
+    func kind(_ w: String) -> Token.Kind? { toks.first { ns.substring(with: $0.range) == w }?.kind }
+    XCTAssertEqual(kind("# comentario"), .comment)
+    XCTAssertEqual(kind("class"), .keyword)
+    XCTAssertEqual(kind("unless"), .keyword)
+    XCTAssertEqual(kind("\"x\""), .string)
+    XCTAssertEqual(kind(":ok"), .annotation)
+    XCTAssertEqual(kind("status:"), .annotation)
+    XCTAssertEqual(kind("%w[a b]"), .string)
+    XCTAssertEqual(kind("@user"), .identifier)
+    XCTAssertTrue(toks.contains { $0.kind == .string && ns.substring(with: $0.range).contains("SELECT 1") })
+    XCTAssertNil(toks.first { ns.substring(with: $0.range) == "SELECT" })
+    let sem = RubyLexer.semantics(text: src, tokens: toks)
+    XCTAssertTrue(sem.fields.contains("@user"))
+    XCTAssertEqual(sem.declarations.map { ns.substring(with: $0) }, ["call"])
+  }
+}

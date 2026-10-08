@@ -115,6 +115,12 @@ struct CenterPane: View {
       HStack(spacing: Metrics.m) {
         SummaryBar()
         Spacer(minLength: 0)
+        Toggle(isOn: $model.showTests) {
+          Label("Tests", systemImage: "testtube.2")
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help("Mostrar u ocultar los tests en el mapa (⌘⇧T)")
       }
       .padding(.horizontal, Metrics.m).padding(.vertical, Metrics.s)
       Divider()
@@ -214,6 +220,8 @@ public struct ReviewCommands: Commands {
       Button(model.sideBySide ? "Diff unificado" : "Diff lado a lado") { model.toggleSideBySide() }
         .keyboardShortcut("d", modifiers: [.command, .option]).disabled(model.location == nil)
       Button("Solo código") { model.toggleCodeOnly() }.keyboardShortcut("c", modifiers: [.command, .shift])
+      Button(model.showTests ? "Ocultar tests" : "Mostrar tests") { model.showTests.toggle() }
+        .keyboardShortcut("t", modifiers: [.command, .shift])
       Divider()
       Button("Acercar") { model.zoomIn() }.keyboardShortcut("+")
       Button("Alejar") { model.zoomOut() }.keyboardShortcut("-")

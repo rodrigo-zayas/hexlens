@@ -61,6 +61,8 @@ struct CodeContent {
   var staticNames: Set<String> = []
   /// Estructura del fichero (líneas del fichero nuevo).
   var outline: [OutlineEntry] = []
+  /// El plegado por llaves solo tiene sentido en Java.
+  var isJava = true
 }
 
 struct ScrollRequest: Equatable {
@@ -183,7 +185,7 @@ struct CodeTextView: NSViewRepresentable {
       textView.lines = content.document.lines
       textView.lineStarts = content.document.lineStarts
       textView.computeIndents()
-      textView.configureFolding(Self.foldRegions(for: content.document.lines, isJava: !content.tokens.isEmpty))
+      textView.configureFolding(Self.foldRegions(for: content.document.lines, isJava: content.isJava))
       textView.indexIdentifiers(tokens: content.tokens)
       c.reportCursor(textView)
       // Fichero nuevo entero: sin fondo verde, solo la barra del margen (como IntelliJ).
@@ -710,11 +712,21 @@ final class CodeNSTextView: NSTextView {
     let glyphs = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
     var r = lm.boundingRect(forGlyphRange: glyphs, in: tc)
     r.origin.y += textContainerOrigin.y
-    // Línea objetivo a un tercio de la altura visible, como al navegar en el IDE.
-    let visible = enclosingScrollView?.contentView.bounds.height ?? 600
-    scroll(NSPoint(x: 0, y: max(0, r.minY - visible / 3)))
+    // Línea objetivo a un tercio de la altura visible, como al navegar en el IDE; siempre desde la columna 0.
+    let bounds = enclosingScrollView?.contentView.bounds ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    scroll(NSPoint(x: 0, y: max(0, r.minY - bounds.height / 3)))
     enclosingScrollView?.reflectScrolledClipView(enclosingScrollView!.contentView)
-    if length > 0 { showFindIndicator(for: range) }
+    // El indicador hace scroll hasta ver todo su rango: se limita al texto de la línea que ya cabe
+    // en pantalla (sin sangría) para que no desplace la vista en horizontal.
+    let text = lines[line].text as NSString
+    let indent = text.rangeOfCharacter(from: CharacterSet.whitespaces.inverted).location
+    guard indent != NSNotFound else { return }
+    let fits = lm.glyphRange(
+      forBoundingRect: NSRect(x: 0, y: r.minY - textContainerOrigin.y, width: max(bounds.width - textContainerOrigin.x - 8, 1), height: max(r.height, 1)),
+      in: tc)
+    let visibleChars = lm.characterRange(forGlyphRange: fits, actualGlyphRange: nil)
+    let end = min(start + length, NSMaxRange(visibleChars))
+    if end > start + indent { showFindIndicator(for: NSRange(location: start + indent, length: end - start - indent)) }
   }
 }
 
