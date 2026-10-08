@@ -40,6 +40,16 @@ public protocol ArchitectureProfile: Sendable {
   func classify(path: String, facts: SourceFacts?) -> ArchInfo
   /// Regla de dependencias violada por `importing`, si la hay.
   func violation(from: ArchInfo, fromPackage: String, importing fqn: String) -> (String, Violation.Severity)?
+  /// Pieza de la PR que prueba `test`, si la hay. Por defecto casa `FooTest` con `Foo`.
+  func testSubject(of test: CodeUnit, among units: [CodeUnit]) -> CodeUnit?
+}
+
+extension ArchitectureProfile {
+  public func testSubject(of test: CodeUnit, among units: [CodeUnit]) -> CodeUnit? {
+    guard let subject = ItxHexagonalProfile.testSubject(of: test.typeName) else { return nil }
+    let candidates = units.filter { !$0.isTest && $0.typeName == subject }
+    return candidates.first { $0.packageName == test.packageName } ?? candidates.first
+  }
 }
 
 /// Hexagonal de AMIGA (ITX): módulos `*-domain`, `*-application`, `*-infrastructure`,

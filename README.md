@@ -19,6 +19,7 @@ GitHub enseña una PR como una lista alfabética de ficheros. En un micro hexago
 - **Explicar con Claude**: abre Terminal con una sesión de `claude` en el repo y un prompt que pide una explicación concisa de la PR o de un fichero. Se puede seguir preguntando.
 - **Grafo jerárquico** según el perfil de arquitectura detectado: zonas (en ITX Infraestructura → Aplicación → Dominio, y Boot aparte) → módulos/componentes con chip de tecnología (`amanda · pipe`, `mongo`…) → contextos → ficheros. Entrada/salida es una flecha (↘ / ↗) en el nodo. Aristas finas y curvas; al pasar el ratón o seleccionar se resaltan las conectadas y se atenúa el resto. Con zoom < 50 % solo quedan los títulos de módulo y contexto.
 - **Gestos del mapa**: pellizco para hacer zoom, dos dedos para desplazar (con inercia), doble toque con dos dedos para smart zoom, ⌘ + rueda para zoom en el cursor y arrastrar el fondo para mover. ⌘+ / ⌘- / ⌘0 con animación y **⌘9** ajusta el mapa a la ventana (también al cargar una PR).
+- **Perfiles soportados**: ITX hexagonal (AMIGA), Ruby on Rails (Zeitwerk: controllers, consumers, jobs, services, policies, models, producers, `lib/api_clients`…), Java en capas genérico y Genérico.
 - **Perfiles con autodetección**: se elige el lenguaje dominante de los cambios y, de sus perfiles, el de mayor `matchScore`; si ninguno pasa de 0,2 se usa el más parecido y, como último recurso, `GenericProfile`. El nombre del perfil sale en la cabecera del mapa y en el informe.
 - **Orden de lectura** sugerido: dominio hacia fuera, entrada hacia dentro, tests primero o más grande primero. Cada test va pegado a la clase que prueba.
 - **Punto de entrada**: la pieza más conectada dentro de la PR.
@@ -77,6 +78,8 @@ Claude Desktop, en `~/Library/Application Support/Claude/claude_desktop_config.j
 |---|---|
 | git y `gh` por proceso, blobs en lote con `cat-file --batch` | `Sources/HexLensCore/Git.swift`, `GitHub.swift` |
 | Extractor ligero de Java: paquete, imports, tipos, supertipos, anotaciones y rangos de métodos. No compila ni resuelve tipos | `Analysis/JavaAnalyzer.swift` |
+| Extractor ligero de Ruby (`.rb`, `.rake`, `.jbuilder`): namespace, clase, `include`s, `def` con su rango y referencias a constantes como imports candidatos (lookup léxico). Nombres por convención Zeitwerk | `Analysis/RubyAnalyzer.swift` |
+| Rails: zonas Entrada → Jobs → Servicios/Dominio → Modelos → Salida → Config/BD; contenedor `services · Flow`, `controllers · Dam::V1`; los specs se enlazan con su clase por ruta | `Architecture/RailsProfile.swift` |
 | Convenciones AMIGA: módulos `*-domain/-application/-infrastructure/-components-*`, paquetes `com.inditex.<app>.<capa>.<contexto>` | `Architecture/ArchitectureProfile.swift` |
 | Aristas por imports, wildcards y mismo paquete. Contexto, tests y violaciones | `Graph.swift` |
 | Layout jerárquico zona → módulo → contexto con orden por baricentro | `GraphLayout.swift` |
@@ -85,7 +88,7 @@ Claude Desktop, en `~/Library/Application Support/Claude/claude_desktop_config.j
 
 Para otros lenguajes o arquitecturas hay dos puntos de extensión:
 
-- `LanguageAnalyzer`, para Kotlin o TypeScript.
+- `LanguageAnalyzer`, para Kotlin o TypeScript (hoy Java y Ruby; `Analyzers.all` los registra y `Analyzers.for(path)` elige por extensión).
 - `ArchitectureProfile`, para otras convenciones, por ejemplo Clean o jMolecules `@Port`/`@Adapter`.
 
 ### Límites conocidos

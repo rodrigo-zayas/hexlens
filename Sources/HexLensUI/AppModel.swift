@@ -348,9 +348,7 @@ public final class AppModel: ObservableObject {
           name: u.fileName, detail: u.path, layer: u.layer.title, changed: changed, path: u.path, line: nil))
       case .type:
         guard u.isCode else { continue }
-        let entries = u.path.hasSuffix(".java")
-          ? s.store.text(u.path, at: s.headSHA).map(Outline.java)?.filter { $0.kind == .type } ?? []
-          : []
+        let entries = s.store.text(u.path, at: s.headSHA).map { Outline.entries(path: u.path, source: $0) }?.filter { $0.kind == .type } ?? []
         if entries.isEmpty {
           out.append(QuickOpenEntry(
             name: u.typeName, detail: u.packageName.isEmpty ? u.path : u.packageName, layer: u.layer.title,
@@ -490,7 +488,7 @@ public final class AppModel: ObservableObject {
     let statics = Set(facts.imports.filter(\.isStatic).compactMap { $0.name.components(separatedBy: ".").last })
     let c = CodeContent(
       id: "\(s.headSHA)|\(key)", document: document, tokens: tokens, semantics: semantics, links: links, staticNames: statics,
-      outline: isJava && unit?.status != .deleted ? head.map(Outline.java) ?? [] : [])
+      outline: unit?.status != .deleted ? head.map { Outline.entries(path: path, source: $0) } ?? [] : [])
     var baseContent: CodeContent?
     if let baseDocument {
       let baseTokens = isJava ? JavaLexer.tokens(baseDocument.text) : []

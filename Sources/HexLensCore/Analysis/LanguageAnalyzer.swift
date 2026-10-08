@@ -5,6 +5,8 @@ public struct ImportDecl: Hashable, Codable, Sendable {
   public let isStatic: Bool
   public let isWildcard: Bool
   public let line: String
+  /// Ruby: candidatos léxicos de una misma referencia comparten grupo; vale el primero que exista.
+  public var candidateGroup: String? = nil
 }
 
 public struct TypeDecl: Hashable, Codable, Sendable {
@@ -36,11 +38,18 @@ public struct SourceFacts: Hashable, Codable, Sendable {
   public init() {}
 }
 
-/// Punto de extensión por lenguaje. Hoy solo Java; TypeScript o Kotlin entrarían aquí.
+/// Punto de extensión por lenguaje. Hoy Java y Ruby; TypeScript o Kotlin entrarían aquí.
 public protocol LanguageAnalyzer: Sendable {
   var language: String { get }
   func handles(_ path: String) -> Bool
   func analyze(path: String, source: String) -> SourceFacts
   /// Ruta de fichero → nombre cualificado, para indexar el repo sin parsearlo.
   func qualifiedName(forPath path: String) -> String?
+}
+
+/// Analizadores disponibles; el de un fichero se elige por extensión.
+public enum Analyzers {
+  public static let all: [LanguageAnalyzer] = [JavaAnalyzer(), RubyAnalyzer()]
+
+  public static func `for`(_ path: String) -> LanguageAnalyzer? { all.first { $0.handles(path) } }
 }

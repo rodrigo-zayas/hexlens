@@ -88,13 +88,13 @@ public struct GenericProfile: ArchitectureProfile {
 /// Catálogo de perfiles. Añadir uno nuevo es solo añadirlo a `all`.
 public enum ProfileRegistry {
   public static let all: [ArchitectureProfile] = [
-    ItxHexagonalProfile(), GenericLayeredJavaProfile(), GenericProfile(),
+    ItxHexagonalProfile(), RailsProfile(), GenericLayeredJavaProfile(), GenericProfile(),
   ]
 
   static let languageByExtension: [String: String] = [
     "java": "java", "kt": "kotlin", "kts": "kotlin", "scala": "scala", "py": "python", "ts": "typescript",
     "tsx": "typescript", "js": "javascript", "jsx": "javascript", "go": "go", "swift": "swift",
-    "rs": "rust", "cs": "csharp", "rb": "ruby", "php": "php",
+    "rs": "rust", "cs": "csharp", "rb": "ruby", "rake": "ruby", "jbuilder": "ruby", "php": "php",
   ]
 
   public static func dominantLanguage(paths: [String]) -> String? {

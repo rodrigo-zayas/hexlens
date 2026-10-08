@@ -130,16 +130,25 @@ struct GraphBuilder {
 
     func resolve(_ f: SourceFacts) -> Set<String> {
       var out = Set<String>()
-      func add(_ name: String) {
+      @discardableResult
+      func add(_ name: String) -> Bool {
         // a.b.Outer.Inner → a.b.Outer si Inner no es un fichero.
         var n = name
         while !n.isEmpty {
-          if pathByFQN[n] != nil { out.insert(n); return }
-          guard let dot = n.lastIndex(of: ".") else { return }
+          if pathByFQN[n] != nil { out.insert(n); return true }
+          guard let dot = n.lastIndex(of: ".") else { return false }
           n = String(n[..<dot])
         }
+        return false
       }
+      var resolvedGroups = Set<String>()
       for imp in f.imports {
+        // Candidatos léxicos (Ruby): gana el primero que existe.
+        if let group = imp.candidateGroup {
+          guard !resolvedGroups.contains(group) else { continue }
+          if add(imp.name) { resolvedGroups.insert(group) }
+          continue
+        }
         if imp.isWildcard {
           let pkg = String(imp.name.dropLast(2))
           if imp.isStatic { add(pkg); continue }
@@ -223,9 +232,7 @@ struct GraphBuilder {
     // Tests → clase probada.
     var subjectByTest: [String: String] = [:]
     for t in units where t.isTest && t.isCode {
-      guard let subject = ItxHexagonalProfile.testSubject(of: t.typeName) else { continue }
-      let candidates = units.filter { !$0.isTest && $0.typeName == subject }
-      if let s = candidates.first(where: { $0.packageName == t.packageName }) ?? candidates.first {
+      if let s = profile.testSubject(of: t, among: units) {
         subjectByTest[t.id] = s.id
         edges["\(t.id)→\(s.id)"] = Dependency(from: t.id, to: s.id, kind: .tests)
       }
@@ -239,7 +246,12 @@ struct GraphBuilder {
         module: u.module, layer: u.layer, role: u.role, context: u.context,
         packageLabel: u.packageLabel, isTest: false, component: u.component)
       let added = diffs[u.id]?.addedText ?? []
+      var seenGroups = Set<String>()
       for imp in f.imports {
+        if let group = imp.candidateGroup {
+          guard !seenGroups.contains(group), pathByFQN[imp.name] != nil else { continue }
+          seenGroups.insert(group)
+        }
         var fqn = imp.isWildcard ? String(imp.name.dropLast(2)) : imp.name
         if imp.isStatic && !imp.isWildcard, let dot = fqn.lastIndex(of: ".") { fqn = String(fqn[..<dot]) }
         guard let (message, severity) = profile.violation(from: info, fromPackage: u.packageName, importing: fqn) else { continue }
