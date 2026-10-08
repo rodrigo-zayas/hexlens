@@ -1,0 +1,19 @@
+Sources/HexLensUI/MapScrollView.swift
+  s_4727cc1cd4df26::t_8c5ed66ecb9edf 5-25,70,152-154,161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ddbc6211af58f3e644506c3d8ff17d6e04afa1ce",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
