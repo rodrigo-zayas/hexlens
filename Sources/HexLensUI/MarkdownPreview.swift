@@ -1,7 +1,7 @@
 import HexLensCore
 import SwiftUI
 
-/// Vista previa renderizada de un Markdown, sin dependencias externas.
+/// Vista renderizada de un Markdown, sin dependencias externas.
 struct MarkdownPreview: View {
   let text: String
   let path: String

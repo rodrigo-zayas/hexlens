@@ -117,9 +117,9 @@ struct DetailView: View {
     return VStack(alignment: .leading, spacing: Metrics.s) {
       HStack(spacing: Metrics.s) {
         Button { model.back() } label: { Image(systemName: "chevron.left") }
-          .disabled(model.backStack.isEmpty).help("Atrás (⌘⌥←)").handCursor(!model.backStack.isEmpty)
+          .disabled(model.backStack.isEmpty).help("Atrás (⌘←)").handCursor(!model.backStack.isEmpty)
         Button { model.forward() } label: { Image(systemName: "chevron.right") }
-          .disabled(model.forwardStack.isEmpty).help("Adelante (⌘⌥→)").handCursor(!model.forwardStack.isEmpty)
+          .disabled(model.forwardStack.isEmpty).help("Adelante (⌘→)").handCursor(!model.forwardStack.isEmpty)
         HStack(spacing: 4) {
           Text(info.0)
           Image(systemName: "chevron.right").font(.system(size: 8))
@@ -173,11 +173,11 @@ struct DetailView: View {
           .pickerStyle(.segmented).labelsHidden().fixedSize().handCursor()
         if tab == .code, Self.isMarkdown(path) {
           Picker("", selection: $markdownPreview) {
-            Text("Vista previa").tag(true)
+            Text("Renderizado").tag(true)
             Text("Código").tag(false)
           }
           .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small).handCursor()
-          .help("Vista previa renderizada o código fuente con los cambios")
+          .help("Documento renderizado o código fuente con los cambios")
         }
         if tab == .code, !(Self.isMarkdown(path) && markdownPreview) {
           Toggle("Completo", isOn: Binding(get: { model.fullFile }, set: { _ in model.toggleFullFile() }))
