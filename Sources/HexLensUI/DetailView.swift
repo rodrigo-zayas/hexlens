@@ -5,6 +5,7 @@ import SwiftUI
 struct DetailView: View {
   @EnvironmentObject var model: AppModel
   @State private var tab = Tab.code
+  @State private var sync = ScrollSync()
 
   enum Tab: String, CaseIterable { case code = "Código", relations = "Relaciones" }
 
@@ -20,15 +21,7 @@ struct DetailView: View {
             if model.findVisible { FindBar() }
             let matches = model.findMatches
             Breadcrumbs(path: location.path, content: content, changed: unit?.members ?? [])
-            CodeTextView(
-              content: content, scroll: model.scrollRequest, matches: matches,
-              currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1),
-              notes: model.notes(in: location.path).map { NoteSpan(id: $0.id, start: $0.startLine, end: $0.endLine, outdated: $0.outdated) },
-              addNoteSerial: model.addNoteSerial,
-              onAddNote: { model.beginNote(path: location.path, start: $0, end: $1) },
-              onOpenNote: { model.editNote($0) },
-              onCursor: { model.cursorLine = $0 },
-              onLink: { model.follow($0) })
+            codePane(content, path: location.path, matches: matches)
           } else {
             ContentUnavailableView("Sin contenido", systemImage: "doc", description: Text("Fichero binario o vacío."))
           }
@@ -48,6 +41,30 @@ struct DetailView: View {
       }
     } else {
       ContentUnavailableView("Elige una pieza", systemImage: "hexagon", description: Text("Pulsa un nodo del mapa o un fichero de la lista."))
+    }
+  }
+
+  @ViewBuilder
+  private func codePane(_ content: CodeContent, path: String, matches: [NSRange]) -> some View {
+    let pane = CodeTextView(
+              content: content, scroll: model.scrollRequest, matches: matches,
+              currentMatch: matches.isEmpty ? nil : min(model.findIndex, matches.count - 1),
+              notes: model.notes(in: path).map { NoteSpan(id: $0.id, start: $0.startLine, end: $0.endLine, outdated: $0.outdated) },
+              addNoteSerial: model.addNoteSerial,
+              onAddNote: { model.beginNote(path: path, start: $0, end: $1) },
+              onOpenNote: { model.editNote($0) },
+              onCursor: { model.cursorLine = $0 },
+              onLink: { model.follow($0) },
+              sync: model.baseContent(for: path) == nil ? nil : sync)
+    if let base = model.baseContent(for: path) {
+      HSplitView {
+        CodeTextView(
+          content: base, scroll: nil, matches: [], currentMatch: nil, onLink: { _ in }, readOnlyLeft: true, sync: sync)
+          .frame(minWidth: 200)
+        pane.frame(minWidth: 200)
+      }
+    } else {
+      pane
     }
   }
 
@@ -120,6 +137,14 @@ struct DetailView: View {
           Toggle("Completo", isOn: Binding(get: { model.fullFile }, set: { _ in model.toggleFullFile() }))
             .toggleStyle(.checkbox).fixedSize()
             .help("Fichero entero con los cambios marcados, o solo los fragmentos cambiados")
+          if inPR {
+            Picker("", selection: Binding(get: { model.sideBySide }, set: { _ in model.toggleSideBySide() })) {
+              Text("Unificado").tag(false)
+              Text("Lado a lado").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            .help("Diff unificado o lado a lado (⌥⌘D)")
+          }
           if inPR {
             Button { model.jumpChange(-1) } label: { Image(systemName: "arrow.up") }.help("Cambio anterior (⌘⌥↑)")
             Button { model.jumpChange(1) } label: { Image(systemName: "arrow.down") }.help("Cambio siguiente (⌘⌥↓)")

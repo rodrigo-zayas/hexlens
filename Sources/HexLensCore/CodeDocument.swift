@@ -1,7 +1,7 @@
 import Foundation
 
 public struct CodeLine: Sendable, Hashable {
-  public enum Kind: Sendable, Hashable { case context, added, removed, separator }
+  public enum Kind: Sendable, Hashable { case context, added, removed, separator, filler }
   public let kind: Kind
   public let text: String
   public let oldNumber: Int?
@@ -39,7 +39,8 @@ public struct CodeDocument: Sendable {
 
   public func index(ofNewLine n: Int) -> Int? { lines.firstIndex { $0.newNumber == n } }
   public var changeIndices: [Int] {
-    lines.indices.filter { i in lines[i].kind != .context && lines[i].kind != .separator && (i == 0 || lines[i - 1].kind == .context || lines[i - 1].kind == .separator) }
+    lines.indices.filter { i in lines[i].kind != .context && lines[i].kind != .separator && lines[i].kind != .filler
+        && (i == 0 || lines[i - 1].kind == .context || lines[i - 1].kind == .separator) }
   }
 
   public static func build(head: String?, base: String?, diff: FileDiff?, full: Bool) -> CodeDocument {

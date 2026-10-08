@@ -88,6 +88,10 @@ struct CodeTextView: NSViewRepresentable {
   /// Línea del fichero nuevo bajo el cursor, para las migas.
   var onCursor: (Int?) -> Void = { _ in }
   let onLink: (CodeLink) -> Void
+  /// Panel izquierdo del lado a lado: solo lectura, sin notas ni enlaces ni migas.
+  var readOnlyLeft = false
+  /// Sincroniza el scroll vertical con el otro panel.
+  var sync: ScrollSync?
   @Environment(\.colorScheme) private var scheme
 
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -117,6 +121,10 @@ struct CodeTextView: NSViewRepresentable {
     scrollView.verticalRulerView = CodeGutterView(scrollView: scrollView, textView: textView)
     scrollView.hasVerticalRuler = true
     scrollView.rulersVisible = true
+    textView.typingAttributes = [.font: CodeTheme.font, .paragraphStyle: CodeTheme.paragraph]
+    textView.readOnlySide = readOnlyLeft
+    context.coordinator.readOnly = readOnlyLeft
+    sync?.register(scrollView)
     let container = CodeContainerView(scrollView: scrollView, textView: textView)
     context.coordinator.textView = textView
     return container
@@ -240,9 +248,11 @@ struct CodeTextView: NSViewRepresentable {
     var highlight = Highlight()
     var onLink: (CodeLink) -> Void = { _ in }
     var onCursor: (Int?) -> Void = { _ in }
+    var readOnly = false
     weak var textView: CodeNSTextView?
 
     func reportCursor(_ tv: CodeNSTextView) {
+      guard !readOnly else { return }
       let line = tv.currentNewLine()
       DispatchQueue.main.async { [onCursor] in onCursor(line) }
     }
@@ -267,6 +277,7 @@ final class CodeNSTextView: NSTextView {
   var lineStarts: [Int] = []
   var theme = CodeTheme.light
   var allAdded = false
+  var readOnlySide = false
   var noteSpans: [NoteSpan] = []
   var onAddNote: (Int, Int) -> Void = { _, _ in }
   var onOpenNote: (UUID) -> Void = { _ in }
@@ -369,6 +380,7 @@ final class CodeNSTextView: NSTextView {
       case .removed: color = self.theme.removed
       case .separator: color = self.theme.separator
       case .context: color = nil
+      case .filler: color = self.theme.gutterText.withAlphaComponent(0.10)
       }
       if let color {
         color.setFill()
@@ -464,6 +476,7 @@ final class CodeNSTextView: NSTextView {
       if i != NSNotFound { setSelectedRange(NSRange(location: i, length: 0)) }
     }
     let menu = super.menu(for: event) ?? NSMenu()
+    if readOnlySide { return menu }
     let item = NSMenuItem(title: "Añadir nota…", action: #selector(addNoteFromMenu(_:)), keyEquivalent: "n")
     item.keyEquivalentModifierMask = [.command, .option]
     item.target = self
@@ -588,5 +601,34 @@ final class ScrollMarkStrip: NSView {
     let line = min(tv.lines.count - 1, max(0, Int(p.y / max(bounds.height, 1) * CGFloat(tv.lines.count))))
     guard tv.lines[line].kind != .separator else { return }
     tv.reveal(line: line)
+  }
+}
+
+/// Une los scroll verticales de dos paneles; el horizontal es independiente.
+final class ScrollSync {
+  private var views: [Weak] = []
+  private var syncing = false
+
+  private struct Weak { weak var scrollView: NSScrollView? }
+
+  func register(_ scrollView: NSScrollView) {
+    views.removeAll { $0.scrollView == nil }
+    views.append(Weak(scrollView: scrollView))
+    scrollView.contentView.postsBoundsChangedNotifications = true
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(boundsChanged(_:)), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+  }
+
+  @objc private func boundsChanged(_ note: Notification) {
+    guard !syncing, let clip = note.object as? NSClipView else { return }
+    syncing = true
+    defer { syncing = false }
+    for case let other? in views.map(\.scrollView) where other.contentView !== clip {
+      var origin = other.contentView.bounds.origin
+      guard origin.y != clip.bounds.origin.y else { continue }
+      origin.y = clip.bounds.origin.y
+      other.contentView.scroll(to: origin)
+      other.reflectScrolledClipView(other.contentView)
+    }
   }
 }
