@@ -2,6 +2,27 @@ import AppKit
 import HexLensCore
 import SwiftUI
 
+/// Lienzo acotado: deja moverse más allá del mapa hasta que su borde llega al centro de la vista,
+/// así nunca queda pegado a una esquina y se puede desplazar aunque quepa entero.
+final class MapClipView: NSClipView {
+  static let marginFraction: CGFloat = 0.5
+
+  override var documentRect: NSRect {
+    guard let doc = documentView else { return super.documentRect }
+    return doc.frame.insetBy(dx: -bounds.width * Self.marginFraction, dy: -bounds.height * Self.marginFraction)
+  }
+
+  override func constrainBoundsRect(_ proposed: NSRect) -> NSRect {
+    guard let doc = documentView else { return super.constrainBoundsRect(proposed) }
+    var r = proposed
+    let area = doc.frame.insetBy(dx: -r.width * Self.marginFraction, dy: -r.height * Self.marginFraction)
+    func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { lo <= hi ? min(max(v, lo), hi) : (lo + hi) / 2 }
+    r.origin.x = clamp(r.origin.x, area.minX, area.maxX - r.width)
+    r.origin.y = clamp(r.origin.y, area.minY, area.maxY - r.height)
+    return r
+  }
+}
+
 /// NSScrollView con magnificación: pellizco, pan con inercia y smart zoom del trackpad, ⌘+rueda
 /// y arrastre del fondo. El contenido sigue siendo SwiftUI vectorial, así que el texto no se pixela.
 final class MapNSScrollView: NSScrollView {
@@ -46,6 +67,7 @@ struct MapScrollView: NSViewRepresentable {
 
   func makeNSView(context: Context) -> MapNSScrollView {
     let scroll = MapNSScrollView()
+    scroll.contentView = MapClipView()
     scroll.hasHorizontalScroller = true
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
@@ -127,14 +149,16 @@ struct MapScrollView: NSViewRepresentable {
       pendingFit = false
       let m = min(max(min(area.width / size.width, area.height / size.height), MapScrollView.minZoom), 1)
       scroll.magnification = m
-      scroll.contentView.scroll(to: .zero)
+      let visible = scroll.contentView.bounds.size
+      let centred = NSPoint(x: (size.width - visible.width) / 2, y: (size.height - visible.height) / 2)
+      scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(NSRect(origin: centred, size: visible)).origin)
       scroll.reflectScrolledClipView(scroll.contentView)
       publishZoom()
     }
 
     func reveal(_ frame: CGRect) {
       guard let scroll else { return }
-      let visible = scroll.documentVisibleRect
+      let visible = scroll.contentView.bounds
       guard !visible.insetBy(dx: 20, dy: 20).contains(frame) else { return }
       let target = NSPoint(x: frame.midX - visible.width / 2, y: frame.midY - visible.height / 2)
       let origin = scroll.contentView.constrainBoundsRect(NSRect(origin: target, size: visible.size)).origin
