@@ -24,12 +24,13 @@ final class MapClipView: NSClipView {
 }
 
 /// Mapa desplazable con zoom del trackpad (pellizco, smart zoom), ⌘+rueda y arrastre del fondo.
-/// El zoom se aplica en SwiftUI (`scaleEffect`) y no con la magnificación de NSScrollView: con
-/// esta, NSHostingView desalinea el hover, los clics y las aristas.
+/// Durante el gesto se escala con la magnificación de NSScrollView (GPU, sin recalcular SwiftUI);
+/// al parar, el zoom se «hornea» en SwiftUI con magnificación 1, que es la única en la que
+/// NSHostingView alinea bien hover, clics y aristas.
 final class MapNSScrollView: NSScrollView {
   var onLayout: (() -> Void)?
-  /// Factor multiplicativo y punto del gesto en coordenadas de la vista.
-  var onZoom: ((CGFloat, NSPoint) -> Void)?
+  /// Factor multiplicativo, punto del gesto en coordenadas de la vista y si el gesto ha terminado.
+  var onZoom: ((CGFloat, NSPoint, Bool) -> Void)?
   var onSmartZoom: ((NSPoint) -> Void)?
 
   override func layout() {
@@ -38,7 +39,8 @@ final class MapNSScrollView: NSScrollView {
   }
 
   override func magnify(with event: NSEvent) {
-    onZoom?(1 + event.magnification, convert(event.locationInWindow, from: nil))
+    let ended = event.phase == .ended || event.phase == .cancelled
+    onZoom?(1 + event.magnification, convert(event.locationInWindow, from: nil), ended)
   }
 
   override func smartMagnify(with event: NSEvent) {
@@ -48,15 +50,15 @@ final class MapNSScrollView: NSScrollView {
   override func scrollWheel(with event: NSEvent) {
     guard event.modifierFlags.contains(.command) else { return super.scrollWheel(with: event) }
     let delta = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.01 : 0.05)
-    onZoom?(exp(delta), convert(event.locationInWindow, from: nil))
+    onZoom?(exp(delta), convert(event.locationInWindow, from: nil), false)
   }
 
   override func mouseDown(with event: NSEvent) {}
 
   override func mouseDragged(with event: NSEvent) {
     var origin = contentView.bounds.origin
-    origin.x -= event.deltaX
-    origin.y -= documentView?.isFlipped == true ? event.deltaY : -event.deltaY
+    origin.x -= event.deltaX / magnification
+    origin.y -= (documentView?.isFlipped == true ? event.deltaY : -event.deltaY) / magnification
     contentView.scroll(to: contentView.constrainBoundsRect(NSRect(origin: origin, size: contentView.bounds.size)).origin)
     reflectScrolledClipView(contentView)
   }
@@ -80,6 +82,9 @@ struct MapScrollView: NSViewRepresentable {
     scroll.drawsBackground = true
     scroll.backgroundColor = .textBackgroundColor
     scroll.contentView.postsBoundsChangedNotifications = true
+    // Magnificación relativa al zoom horneado: cubre de minZoom/maxZoom a maxZoom/minZoom.
+    scroll.maxMagnification = Self.maxZoom / Self.minZoom
+    scroll.minMagnification = Self.minZoom / Self.maxZoom
 
     let c = context.coordinator
     let host = NSHostingView(rootView: AnyView(EmptyView()))
@@ -90,10 +95,11 @@ struct MapScrollView: NSViewRepresentable {
     c.graph = graph
     c.render()
     scroll.onLayout = { [weak c] in c?.attemptFit() }
-    scroll.onZoom = { [weak c] factor, point in
+    scroll.onZoom = { [weak c] factor, point, ended in
       guard let c else { return }
       c.cancelAnimation()
-      c.setZoom(c.zoom * factor, around: point)
+      c.liveZoom(by: factor, around: point)
+      if ended { c.bake() } else { c.scheduleBake() }
     }
     scroll.onSmartZoom = { [weak c] point in
       guard let c else { return }
@@ -186,33 +192,50 @@ struct MapScrollView: NSViewRepresentable {
       if !visible.isNull, !renderedRegion.contains(visible) { render() }
     }
 
-    /// Cambia el zoom manteniendo fijo el punto `anchor` (coordenadas de la scroll view).
-    func setZoom(_ value: CGFloat, around anchor: NSPoint, publish: Bool = true) {
+    /// Zoom total visible: el horneado en SwiftUI por la magnificación temporal.
+    var effectiveZoom: CGFloat { zoom * (scroll?.magnification ?? 1) }
+    private var bakeTask: DispatchWorkItem?
+
+    /// Zoom en vivo: solo cambia la magnificación (barato); el punto bajo el gesto queda fijo.
+    func liveZoom(by factor: CGFloat, around anchor: NSPoint) {
       guard let scroll else { return }
-      let new = clampZoom(value)
-      guard abs(new - zoom) > 0.0001 else { return }
+      let target = clampZoom(effectiveZoom * factor)
       let clip = scroll.contentView
-      let inClip = clip.convert(anchor, from: scroll)
-      let offset = NSPoint(x: inClip.x - clip.bounds.minX, y: inClip.y - clip.bounds.minY)
-      let docPoint = NSPoint(x: inClip.x / zoom, y: inClip.y / zoom)
-      zoom = new
-      render()
-      let origin = NSPoint(x: docPoint.x * new - offset.x, y: docPoint.y * new - offset.y)
-      clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
-      scroll.reflectScrolledClipView(clip)
-      if publish { publishZoom() }
+      scroll.setMagnification(target / zoom, centeredAt: clip.convert(anchor, from: scroll))
+    }
+
+    func scheduleBake(after delay: TimeInterval = 0.15) {
+      bakeTask?.cancel()
+      let task = DispatchWorkItem { [weak self] in self?.bake() }
+      bakeTask = task
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
+    }
+
+    /// Pasa la magnificación temporal al zoom de SwiftUI conservando el centro de la vista.
+    func bake() {
+      bakeTask?.cancel()
+      bakeTask = nil
+      guard let scroll, abs(scroll.magnification - 1) > 0.0001 else { return }
+      let clip = scroll.contentView
+      let centre = NSPoint(x: clip.bounds.midX / zoom, y: clip.bounds.midY / zoom)
+      zoom = effectiveZoom
+      scroll.magnification = 1
+      apply(zoom: zoom, centre: centre)
+      publishZoom()
     }
 
     func animateZoom(to value: CGFloat, around anchor: NSPoint) {
       guard let scroll else { return }
+      bake()
       let target = clampZoom(value)
       let clip = scroll.contentView
       let inClip = clip.convert(anchor, from: scroll)
       let offset = NSPoint(x: inClip.x - clip.bounds.minX, y: inClip.y - clip.bounds.minY)
       let docPoint = NSPoint(x: inClip.x / zoom, y: inClip.y / zoom)
       let half = NSPoint(x: clip.bounds.width / 2, y: clip.bounds.height / 2)
+      // El punto bajo el cursor queda fijo: su distancia al centro escala con 1/zoom.
       let centre = NSPoint(
-        x: (docPoint.x * target - offset.x + half.x) / target, y: (docPoint.y * target - offset.y + half.y) / target)
+        x: docPoint.x + (half.x - offset.x) / target, y: docPoint.y + (half.y - offset.y) / target)
       animate(toZoom: target, centre: centre)
     }
 
@@ -226,6 +249,7 @@ struct MapScrollView: NSViewRepresentable {
     }
 
     func fit(animated: Bool) {
+      bake()
       guard let scroll, let model else { return }
       let area = scroll.contentSize
       let size = model.layout.size
@@ -245,6 +269,7 @@ struct MapScrollView: NSViewRepresentable {
     private func animate(toZoom target: CGFloat, centre: NSPoint, duration: TimeInterval = 0.28) {
       guard let scroll else { return }
       cancelAnimation()
+      bake()
       let b = scroll.contentView.bounds
       let startZoom = zoom
       let startCentre = NSPoint(x: b.midX / zoom, y: b.midY / zoom)
@@ -257,11 +282,12 @@ struct MapScrollView: NSViewRepresentable {
           // Interpolación logarítmica del zoom: la velocidad percibida es constante.
           let z = startZoom * pow(target / startZoom, e)
           let c = NSPoint(x: startCentre.x + (centre.x - startCentre.x) * e, y: startCentre.y + (centre.y - startCentre.y) * e)
-          self.zoom = z
-          self.apply(zoom: z, centre: c)
+          // Fotogramas intermedios solo con magnificación; SwiftUI se recalcula una vez al final.
+          self.applyMagnified(zoom: z, centre: c)
           if p >= 1 {
             t.invalidate()
             self.animation = nil
+            self.bake()
             self.publishZoom()
           }
         }
@@ -285,9 +311,20 @@ struct MapScrollView: NSViewRepresentable {
       scroll.reflectScrolledClipView(clip)
     }
 
+    private func applyMagnified(zoom z: CGFloat, centre: NSPoint) {
+      guard let scroll else { return }
+      scroll.magnification = z / zoom
+      let clip = scroll.contentView
+      let size = clip.bounds.size
+      let origin = NSPoint(x: centre.x * zoom - size.width / 2, y: centre.y * zoom - size.height / 2)
+      clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: size)).origin)
+      scroll.reflectScrolledClipView(clip)
+    }
+
     private func clampZoom(_ v: CGFloat) -> CGFloat { min(max(v, MapScrollView.minZoom), MapScrollView.maxZoom) }
 
     func reveal(_ docFrame: CGRect) {
+      bake()
       let visible = visibleDocRect
       guard !visible.isNull, !visible.insetBy(dx: 20 / zoom, dy: 20 / zoom).contains(docFrame) else { return }
       animate(toZoom: zoom, centre: NSPoint(x: docFrame.midX, y: docFrame.midY))

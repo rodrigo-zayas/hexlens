@@ -61,7 +61,7 @@ public struct GraphCanvas: View {
   private var neighborhood: Set<String> {
     guard let f = focus else { return [] }
     var s: Set<String> = [f]
-    for e in visibleEdges where e.from == f || e.to == f { s.insert(e.from); s.insert(e.to) }
+    for e in graph.edges where e.from == f || e.to == f { s.insert(e.from); s.insert(e.to) }
     return s
   }
 
@@ -69,8 +69,17 @@ public struct GraphCanvas: View {
     Set(graph.violations.compactMap { v in v.targetID.map { "\(v.unitID)→\($0)" } })
   }
 
+  /// Tests y violaciones por nodo en una pasada (antes era O(nodos × tests) en cada render).
+  private var counts: (tests: [String: Int], violations: [String: Int]) {
+    var t: [String: Int] = [:], v: [String: Int] = [:]
+    for subject in graph.subjectByTest.values { t[subject, default: 0] += 1 }
+    for x in graph.violations { v[x.unitID, default: 0] += 1 }
+    return (t, v)
+  }
+
   public var body: some View {
     let near = neighborhood
+    let counts = self.counts
     ZStack(alignment: .topLeading) {
       Text("Perfil: \(layout.profileName)")
         .font(.system(size: 11, weight: .medium))
@@ -137,8 +146,8 @@ public struct GraphCanvas: View {
           dimmed: focus != nil && !near.contains(unit.id),
           reviewed: reviewed.contains(unit.id),
           isEntry: unit.id == graph.entryPoint,
-          tests: graph.tests(of: unit.id).count,
-          violations: graph.violations(of: unit.id).count,
+          tests: counts.tests[unit.id] ?? 0,
+          violations: counts.violations[unit.id] ?? 0,
           detail: detail,
           zoom: zoom)
           .frame(width: frame.width, height: frame.height)
