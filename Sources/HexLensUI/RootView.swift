@@ -266,6 +266,9 @@ public struct ReviewCommands: Commands {
       Button("Elegir PR…") { model.showPRPicker = true }.keyboardShortcut("p").disabled(model.repo == nil)
     }
     CommandGroup(after: .textEditing) {
+      Button("Estructura del fichero…") { model.showStructure = true }
+        .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(NSF12FunctionKey)!)), modifiers: .command)
+        .disabled(model.location == nil)
       Button("Buscar…") { model.showFind() }.keyboardShortcut("f").disabled(model.location == nil)
       Button("Buscar siguiente") { model.findNext() }.keyboardShortcut("g").disabled(model.location == nil)
       Button("Buscar anterior") { model.findPrevious() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(model.location == nil)
