@@ -23,12 +23,16 @@ public struct GraphLayout: Sendable {
   }
 
   public var profileName = ""
+  /// Cambia en cada cálculo; la UI lo usa para animar la transición entre layouts.
+  public var revision = 0
   public var zones: [Zone] = []
   public var containers: [Container] = []
   public var frames: [String: CGRect] = [:]
   public var size: CGSize = .zero
 
   public init() {}
+
+  nonisolated(unsafe) private static var nextRevision = 0
 
   public static let node = CGSize(width: 270, height: 50)
   public static let margin: CGFloat = 24
@@ -79,6 +83,8 @@ public struct GraphLayout: Sendable {
       }
       layout = place(zones, name: profile.name)
     }
+    nextRevision &+= 1
+    layout.revision = nextRevision
     return layout
   }
 

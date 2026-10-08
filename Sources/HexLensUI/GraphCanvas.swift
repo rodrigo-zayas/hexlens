@@ -11,13 +11,16 @@ public struct GraphCanvas: View {
   var onSelect: (String) -> Void = { _ in }
   var onHover: (String?) -> Void = { _ in }
   private(set) var zoom: CGFloat = 1
+  /// Solo se crean vistas para lo que cae en este rectángulo (coordenadas del mapa).
+  var visibleRect: CGRect = .infinite
 
   public init(
     graph: PRGraph, layout: GraphLayout, selectedID: String? = nil, hoveredID: String? = nil,
     reviewed: Set<String> = [], onSelect: @escaping (String) -> Void = { _ in },
-    onHover: @escaping (String?) -> Void = { _ in }, zoom: CGFloat = 1
+    onHover: @escaping (String?) -> Void = { _ in }, zoom: CGFloat = 1, visibleRect: CGRect = .infinite
   ) {
     self.zoom = zoom
+    self.visibleRect = visibleRect
     self.graph = graph
     self.layout = layout
     self.selectedID = selectedID
@@ -41,9 +44,13 @@ public struct GraphCanvas: View {
     }
   }
 
-  private var showLabels: Bool { zoom >= 0.5 }
+  /// 0 = vista compacta (alejado), 1 = tarjeta completa; transición suave entre 0.38 y 0.62.
+  private var detail: CGFloat {
+    let t = min(max((zoom - 0.38) / 0.24, 0), 1)
+    return t * t * (3 - 2 * t)
+  }
   /// Alejado, los títulos crecen para seguir siendo legibles.
-  private var titleScale: CGFloat { zoom < 0.5 ? min(0.5 / max(zoom, 0.01), 2) : 1 }
+  private var titleScale: CGFloat { 1 + (min(0.5 / max(zoom, 0.01), 2) - 1) * (1 - detail) }
 
   private var focus: String? { hoveredID ?? selectedID }
 
@@ -86,7 +93,7 @@ public struct GraphCanvas: View {
         .offset(x: band.frame.minX + 14, y: band.frame.minY + 12)
       }
 
-      ForEach(layout.containers) { box in
+      ForEach(layout.containers.filter { $0.frame.intersects(visibleRect) }) { box in
         let radius: CGFloat = box.level == 1 ? 10 : 7
         RoundedRectangle(cornerRadius: radius)
           .fill(box.level == 1 ? Color(nsColor: .windowBackgroundColor).opacity(0.75) : Color.primary.opacity(0.03))
@@ -105,8 +112,8 @@ public struct GraphCanvas: View {
           Text(box.title)
             .font(.system(size: (box.level == 1 ? 13 : 10) * titleScale, weight: box.level == 1 ? .semibold : .medium))
             .minimumScaleFactor(0.5)
-          if !box.subtitle.isEmpty && titleScale == 1 {
-            Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
+          if !box.subtitle.isEmpty && detail > 0 {
+            Text(box.subtitle).font(.system(size: 10)).foregroundStyle(.secondary).opacity(detail)
           }
         }
         .lineLimit(1)
@@ -117,8 +124,12 @@ public struct GraphCanvas: View {
       EdgeLayer(buckets: edgeBuckets(near: near))
         .frame(width: layout.size.width, height: layout.size.height)
         .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.18), value: focus)
+        // Con un layout nuevo las aristas antiguas se funden con las nuevas.
+        .id(layout.revision)
+        .transition(.opacity)
 
-      ForEach(graph.units.filter { layout.frames[$0.id] != nil }) { unit in
+      ForEach(graph.units.filter { layout.frames[$0.id]?.intersects(visibleRect) == true }) { unit in
         let frame = layout.frames[unit.id]!
         NodeView(
           unit: unit,
@@ -128,7 +139,7 @@ public struct GraphCanvas: View {
           isEntry: unit.id == graph.entryPoint,
           tests: graph.tests(of: unit.id).count,
           violations: graph.violations(of: unit.id).count,
-          showLabels: showLabels,
+          detail: detail,
           zoom: zoom)
           .frame(width: frame.width, height: frame.height)
           .contentShape(Rectangle())
@@ -136,9 +147,11 @@ public struct GraphCanvas: View {
           .onHover { inside in onHover(inside ? unit.id : nil) }
           .id(unit.id)
           .position(x: frame.midX, y: frame.midY)
+          .transition(.opacity.combined(with: .scale(scale: 0.85)))
       }
     }
     .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+    .animation(.smooth(duration: 0.4), value: layout.revision)
   }
 
   /// Agrupa las aristas por estilo en pocos `Path` vectoriales (nítidos a cualquier zoom).
@@ -147,6 +160,8 @@ public struct GraphCanvas: View {
     var buckets: [String: EdgeBucket] = [:]
     for e in visibleEdges {
       guard let a = layout.frames[e.from], let b = layout.frames[e.to] else { continue }
+      // La curva cabe en la unión de ambos nodos más el bucle lateral.
+      guard a.union(b).insetBy(dx: -90, dy: 0).intersects(visibleRect) else { continue }
       let inFocus = focus == nil || e.from == focus || e.to == focus
       let emphasised = focus != nil && inFocus
       let violation = bad.contains(e.id)
@@ -229,11 +244,18 @@ struct NodeView: View {
   let isEntry: Bool
   let tests: Int
   let violations: Int
-  var showLabels = true
+  var detail: CGFloat = 1
   var zoom: CGFloat = 1
 
   var body: some View {
-    if showLabels { full } else { compact }
+    ZStack {
+      if detail < 1 { compact.opacity(1 - detail) }
+      if detail > 0 { full.opacity(detail) }
+    }
+    .scaleEffect(selected ? 1.03 : 1)
+    .shadow(color: selected ? Color.accentColor.opacity(0.35) : .clear, radius: selected ? 8 : 0)
+    .animation(.easeOut(duration: 0.18), value: dimmed)
+    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selected)
   }
 
   /// Alejado: solo el nombre, grande, sobre el color del estado.

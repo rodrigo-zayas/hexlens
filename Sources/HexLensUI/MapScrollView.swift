@@ -79,6 +79,7 @@ struct MapScrollView: NSViewRepresentable {
     scroll.autohidesScrollers = true
     scroll.drawsBackground = true
     scroll.backgroundColor = .textBackgroundColor
+    scroll.contentView.postsBoundsChangedNotifications = true
 
     let c = context.coordinator
     let host = NSHostingView(rootView: AnyView(EmptyView()))
@@ -91,12 +92,15 @@ struct MapScrollView: NSViewRepresentable {
     scroll.onLayout = { [weak c] in c?.attemptFit() }
     scroll.onZoom = { [weak c] factor, point in
       guard let c else { return }
+      c.cancelAnimation()
       c.setZoom(c.zoom * factor, around: point)
     }
     scroll.onSmartZoom = { [weak c] point in
       guard let c else { return }
-      if abs(c.zoom - 1) < 0.05 { c.fit() } else { c.setZoom(1, around: point) }
+      if abs(c.zoom - 1) < 0.05 { c.fit(animated: true) } else { c.animateZoom(to: 1, around: point) }
     }
+    NotificationCenter.default.addObserver(
+      c, selector: #selector(Coordinator.boundsChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     return scroll
   }
 
@@ -112,9 +116,9 @@ struct MapScrollView: NSViewRepresentable {
       c.render()
       c.attemptFit()
     } else if model.zoom != c.lastModelZoom {
-      // Zoom pedido desde el menú: centrado en la vista.
+      // Zoom pedido desde el menú: animado y centrado en la vista.
       c.lastModelZoom = model.zoom
-      c.setZoom(model.zoom, around: NSPoint(x: scroll.bounds.midX, y: scroll.bounds.midY))
+      c.animateZoom(to: model.zoom, around: NSPoint(x: scroll.bounds.midX, y: scroll.bounds.midY))
     } else {
       c.render()
     }
@@ -135,16 +139,40 @@ struct MapScrollView: NSViewRepresentable {
     var lastModelZoom: CGFloat = 1
     var lastFit = 0
     var pendingFit = false
+    var hasFitted = false
     var lastSelected: String?
+    /// Hover local: no pasa por AppModel para no redibujar toda la ventana al mover el ratón.
+    var hovered: String?
+    /// Zona del lienzo (coordenadas del mapa) que tiene vistas; se amplía al salir de ella.
+    private var renderedRegion: CGRect = .null
+    private var animation: Timer?
+
+    private var visibleDocRect: CGRect {
+      guard let scroll else { return .null }
+      let b = scroll.contentView.bounds
+      return CGRect(x: b.minX / zoom, y: b.minY / zoom, width: b.width / zoom, height: b.height / zoom)
+    }
 
     func render() {
       guard let host, let model, let graph else { return }
       let size = model.layout.size
       let z = zoom
+      let visible = visibleDocRect
+      // Margen de media pantalla por lado para que al desplazar no aparezcan huecos.
+      let region = visible.isNull || visible.isEmpty
+        ? CGRect(origin: .zero, size: size)
+        : visible.insetBy(dx: -visible.width * 0.5, dy: -visible.height * 0.5)
+      renderedRegion = region
       let canvas = GraphCanvas(
-        graph: graph, layout: model.layout, selectedID: model.selectedID, hoveredID: model.hoveredID,
+        graph: graph, layout: model.layout, selectedID: model.selectedID, hoveredID: hovered,
         reviewed: model.reviewed,
-        onSelect: { [model] in model.select($0) }, onHover: { [model] in model.hoveredID = $0 }, zoom: z)
+        onSelect: { [model] in model.select($0) },
+        onHover: { [weak self] id in
+          guard let self, self.hovered != id else { return }
+          self.hovered = id
+          self.render()
+        },
+        zoom: z, visibleRect: region)
       host.rootView = AnyView(
         canvas
           .scaleEffect(z, anchor: .topLeading)
@@ -153,10 +181,15 @@ struct MapScrollView: NSViewRepresentable {
       if host.frame.size != scaled { host.setFrameSize(scaled) }
     }
 
+    @objc func boundsChanged() {
+      let visible = visibleDocRect
+      if !visible.isNull, !renderedRegion.contains(visible) { render() }
+    }
+
     /// Cambia el zoom manteniendo fijo el punto `anchor` (coordenadas de la scroll view).
-    func setZoom(_ value: CGFloat, around anchor: NSPoint) {
+    func setZoom(_ value: CGFloat, around anchor: NSPoint, publish: Bool = true) {
       guard let scroll else { return }
-      let new = min(max(value, MapScrollView.minZoom), MapScrollView.maxZoom)
+      let new = clampZoom(value)
       guard abs(new - zoom) > 0.0001 else { return }
       let clip = scroll.contentView
       let inClip = clip.convert(anchor, from: scroll)
@@ -167,43 +200,97 @@ struct MapScrollView: NSViewRepresentable {
       let origin = NSPoint(x: docPoint.x * new - offset.x, y: docPoint.y * new - offset.y)
       clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
       scroll.reflectScrolledClipView(clip)
-      publishZoom()
+      if publish { publishZoom() }
+    }
+
+    func animateZoom(to value: CGFloat, around anchor: NSPoint) {
+      guard let scroll else { return }
+      let target = clampZoom(value)
+      let clip = scroll.contentView
+      let inClip = clip.convert(anchor, from: scroll)
+      let offset = NSPoint(x: inClip.x - clip.bounds.minX, y: inClip.y - clip.bounds.minY)
+      let docPoint = NSPoint(x: inClip.x / zoom, y: inClip.y / zoom)
+      let half = NSPoint(x: clip.bounds.width / 2, y: clip.bounds.height / 2)
+      let centre = NSPoint(
+        x: (docPoint.x * target - offset.x + half.x) / target, y: (docPoint.y * target - offset.y + half.y) / target)
+      animate(toZoom: target, centre: centre)
     }
 
     func attemptFit() {
       guard pendingFit, let scroll, let model else { return }
       let area = scroll.contentSize
-      let size = model.layout.size
-      guard area.width > 1, area.height > 1, size.width > 1 else { return }
+      guard area.width > 1, area.height > 1, model.layout.size.width > 1 else { return }
       pendingFit = false
-      fit()
+      fit(animated: hasFitted)
+      hasFitted = true
     }
 
-    func fit() {
+    func fit(animated: Bool) {
       guard let scroll, let model else { return }
       let area = scroll.contentSize
       let size = model.layout.size
-      zoom = min(max(min(area.width / size.width, area.height / size.height) * 0.97, MapScrollView.minZoom), 1)
-      render()
-      let clip = scroll.contentView
-      let visible = clip.bounds.size
-      let centred = NSPoint(x: (size.width * zoom - visible.width) / 2, y: (size.height * zoom - visible.height) / 2)
-      clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: centred, size: visible)).origin)
-      scroll.reflectScrolledClipView(clip)
-      publishZoom()
+      let target = min(max(min(area.width / size.width, area.height / size.height) * 0.97, MapScrollView.minZoom), 1)
+      let centre = NSPoint(x: size.width / 2, y: size.height / 2)
+      if animated {
+        animate(toZoom: target, centre: centre)
+      } else {
+        cancelAnimation()
+        zoom = target
+        apply(zoom: target, centre: centre)
+        publishZoom()
+      }
     }
 
-    func reveal(_ docFrame: CGRect) {
+    /// Interpola zoom y centro (coordenadas del mapa) con ease-out; ~60 fps.
+    private func animate(toZoom target: CGFloat, centre: NSPoint, duration: TimeInterval = 0.28) {
       guard let scroll else { return }
-      let frame = CGRect(x: docFrame.minX * zoom, y: docFrame.minY * zoom, width: docFrame.width * zoom, height: docFrame.height * zoom)
-      let visible = scroll.contentView.bounds
-      guard !visible.insetBy(dx: 20, dy: 20).contains(frame) else { return }
-      let target = NSPoint(x: frame.midX - visible.width / 2, y: frame.midY - visible.height / 2)
-      let origin = scroll.contentView.constrainBoundsRect(NSRect(origin: target, size: visible.size)).origin
-      NSAnimationContext.runAnimationGroup({ ctx in
-        ctx.duration = 0.25
-        scroll.contentView.animator().setBoundsOrigin(origin)
-      }, completionHandler: { scroll.reflectScrolledClipView(scroll.contentView) })
+      cancelAnimation()
+      let b = scroll.contentView.bounds
+      let startZoom = zoom
+      let startCentre = NSPoint(x: b.midX / zoom, y: b.midY / zoom)
+      let start = CACurrentMediaTime()
+      let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] t in
+        MainActor.assumeIsolated {
+          guard let self else { t.invalidate(); return }
+          let p = min((CACurrentMediaTime() - start) / duration, 1)
+          let e = CGFloat(1 - pow(1 - p, 3))
+          // Interpolación logarítmica del zoom: la velocidad percibida es constante.
+          let z = startZoom * pow(target / startZoom, e)
+          let c = NSPoint(x: startCentre.x + (centre.x - startCentre.x) * e, y: startCentre.y + (centre.y - startCentre.y) * e)
+          self.zoom = z
+          self.apply(zoom: z, centre: c)
+          if p >= 1 {
+            t.invalidate()
+            self.animation = nil
+            self.publishZoom()
+          }
+        }
+      }
+      RunLoop.main.add(timer, forMode: .common)
+      animation = timer
+    }
+
+    func cancelAnimation() {
+      animation?.invalidate()
+      animation = nil
+    }
+
+    private func apply(zoom z: CGFloat, centre: NSPoint) {
+      guard let scroll else { return }
+      render()
+      let clip = scroll.contentView
+      let size = clip.bounds.size
+      let origin = NSPoint(x: centre.x * z - size.width / 2, y: centre.y * z - size.height / 2)
+      clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: size)).origin)
+      scroll.reflectScrolledClipView(clip)
+    }
+
+    private func clampZoom(_ v: CGFloat) -> CGFloat { min(max(v, MapScrollView.minZoom), MapScrollView.maxZoom) }
+
+    func reveal(_ docFrame: CGRect) {
+      let visible = visibleDocRect
+      guard !visible.isNull, !visible.insetBy(dx: 20 / zoom, dy: 20 / zoom).contains(docFrame) else { return }
+      animate(toZoom: zoom, centre: NSPoint(x: docFrame.midX, y: docFrame.midY))
     }
 
     private func publishZoom() {
