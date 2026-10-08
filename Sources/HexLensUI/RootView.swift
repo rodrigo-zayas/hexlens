@@ -3,7 +3,6 @@ import SwiftUI
 
 public struct RootView: View {
   @EnvironmentObject var model: AppModel
-  @State private var usagePopupOffset = CGSize.zero
 
   public init() {}
 
@@ -40,11 +39,12 @@ public struct RootView: View {
         ZStack {
           Color.black.opacity(0.12).contentShape(Rectangle())
             .onTapGesture { model.usagePopup = nil }
-          UsagesPopupView(offset: $usagePopupOffset)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-            .shadow(radius: 20)
-            .offset(usagePopupOffset)
+          FloatingPopup {
+            UsagesPopupView()
+              .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+              .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+              .shadow(radius: 20)
+          }
         }
         .transition(.opacity)
       }
