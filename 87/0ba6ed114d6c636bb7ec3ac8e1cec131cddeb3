@@ -1,0 +1,25 @@
+.github/workflows/release.yml
+  s_d6efb71f7a515c::t_1d1d37ee6688a7 4,18-19,37-38,47-65,67-78
+README.md
+  s_d6efb71f7a515c::t_54a9d157a198a3 28,82
+scripts/build-app.sh
+  s_d6efb71f7a515c::t_d4ffdecdf60a19 4,9,35-41
+scripts/notarize.sh
+  s_d6efb71f7a515c::t_feb261400521d2 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "870ba6ed114d6c636bb7ec3ac8e1cec131cddeb3",
+  "prompts": {},
+  "sessions": {
+    "s_d6efb71f7a515c": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "8205446b-c15a-4bea-8072-b7901d715950",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
