@@ -34,6 +34,7 @@ public struct RootView: View {
     .navigationTitle(model.repo?.name ?? "HexLens")
     .navigationSubtitle(model.session?.title ?? "")
     .sheet(isPresented: $model.showPRPicker) { PRPickerView().environmentObject(model) }
+    .sheet(item: $model.quickOpen) { QuickOpenView(mode: $0).environmentObject(model) }
     .overlay {
       if let busy = model.busy {
         VStack(spacing: 10) {
@@ -195,7 +196,9 @@ public struct ReviewCommands: Commands {
 
   public var body: some Commands {
     CommandGroup(after: .newItem) {
-      Button("Abrir repositorio…") { model.chooseRepository() }.keyboardShortcut("o")
+      Button("Abrir repositorio…") { model.chooseRepository() }.keyboardShortcut("o", modifiers: [.command, .option])
+      Button("Ir a clase…") { model.quickOpen = .type }.keyboardShortcut("o").disabled(model.session == nil)
+      Button("Ir a fichero…") { model.quickOpen = .file }.keyboardShortcut("o", modifiers: [.command, .shift]).disabled(model.session == nil)
       Button("Elegir PR…") { model.showPRPicker = true }.keyboardShortcut("p").disabled(model.repo == nil)
     }
     CommandGroup(after: .textEditing) {
