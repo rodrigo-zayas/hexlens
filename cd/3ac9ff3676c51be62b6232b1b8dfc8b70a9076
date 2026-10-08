@@ -1,0 +1,19 @@
+Sources/HexLensCore/GraphLayout.swift
+  s_4727cc1cd4df26::t_c65c5fc6fb69d7 121-123,126-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd3ac9ff3676c51be62b6232b1b8dfc8b70a9076",
+  "prompts": {},
+  "sessions": {
+    "s_4727cc1cd4df26": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "d68f17b1-f3a3-4dc6-add4-39453ba5e383",
+        "model": "unknown"
+      },
+      "human_author": "Rodrigo Grille <rodrigogz@inditex.com>"
+    }
+  }
+}
